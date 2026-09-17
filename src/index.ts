@@ -12,11 +12,16 @@
  * @module dsh-chatjimmy
  */
 
+import Schema from '@deepseek-ai/schemastery'
+import { RetryPolicySchema } from '@deepseek-ai/dsh-llm'
+import type { RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
 import { ChatJimmyAdapter } from './adapter.ts'
 import {
   CONTEXT_WINDOW,
   DEFAULT_BASE_URL,
   DEFAULT_MODEL,
+  DEFAULT_STREAM_IDLE_TIMEOUT_MS,
+  MAX_TIMER_DELAY_MS,
   type ChatJimmyConfig,
 } from './protocol.ts'
 import type { HostContext } from './host.ts'
@@ -33,9 +38,8 @@ export const inject = ['llm']
 /**
  * Configuration accepted from this plugin's row in a profile patch.
  *
- * No Schemastery `Config` schema is exported: the loader would then require a
- * Standard Schema, and this plugin validates its own row instead — the same
- * shape the other plugins under `~/dsh-plugins` use.
+ * The exported schema is what Cordis validates the row against and fills
+ * defaults from; `resolveConfig` then normalizes the validated values.
  */
 export interface Config {
   /** Deployment origin. Defaults to `https://chatjimmy.ai`. */
@@ -49,7 +53,28 @@ export interface Config {
    * against the live service at 6144 (prompt + completion).
    */
   readonly contextWindow?: number
+  /**
+   * Per-read stream idle watchdog in milliseconds; a stream that produces
+   * nothing for this long ends with the `TIMEOUT` failure.
+   */
+  readonly streamIdleTimeoutMs?: number
+  /**
+   * Provider-owned retry policy for this route, in the harness
+   * `RetryPolicyConfig` shape (`{ mode: 'normal' | 'always', … }`). Absent
+   * leaves the harness's own normal defaults.
+   */
+  readonly retryPolicy?: RetryPolicyConfig
 }
+
+/** Row schema: defaults live here, so a deployment only states what it changes. */
+export const Config: Schema<Config> = Schema.object({
+  baseUrl: Schema.string().default(DEFAULT_BASE_URL),
+  model: Schema.string().default(DEFAULT_MODEL),
+  topK: Schema.number().step(1).min(1).default(8),
+  contextWindow: Schema.number().step(1).min(1).default(CONTEXT_WINDOW),
+  streamIdleTimeoutMs: Schema.number().min(Number.MIN_VALUE).max(MAX_TIMER_DELAY_MS).default(DEFAULT_STREAM_IDLE_TIMEOUT_MS),
+  retryPolicy: RetryPolicySchema,
+})
 
 /**
  * Validate and normalize one configuration row.
@@ -84,7 +109,22 @@ export function resolveConfig(config: Config = {}): ChatJimmyConfig {
     throw new Error(`chatjimmy: contextWindow must be a positive integer, got ${String(config.contextWindow)}`)
   }
 
-  return { baseUrl, model, topK, contextWindow }
+  const streamIdleTimeoutMs = config.streamIdleTimeoutMs ?? DEFAULT_STREAM_IDLE_TIMEOUT_MS
+  if (!Number.isFinite(streamIdleTimeoutMs) || streamIdleTimeoutMs <= 0 || streamIdleTimeoutMs > MAX_TIMER_DELAY_MS) {
+    throw new Error(
+      `chatjimmy: streamIdleTimeoutMs must be a positive finite number no greater than ${MAX_TIMER_DELAY_MS},`
+      + ` got ${String(config.streamIdleTimeoutMs)}`,
+    )
+  }
+
+  return {
+    baseUrl,
+    model,
+    topK,
+    contextWindow,
+    streamIdleTimeoutMs,
+    ...config.retryPolicy === undefined ? {} : { retryPolicy: config.retryPolicy },
+  }
 }
 
 /**

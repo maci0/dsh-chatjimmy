@@ -7,6 +7,7 @@
  * @module dsh-chatjimmy/protocol
  */
 
+import type { RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, TokenUsage } from './host.ts'
 
 /** Opening marker of the trailing generation-stats block. */
@@ -28,13 +29,11 @@ export const DEFAULT_MODEL = 'llama3.1-8B'
 /** Base URL of the deployment. */
 export const DEFAULT_BASE_URL = 'https://chatjimmy.ai'
 
-/**
- * Attribution the harness requires on every provider request
- * (`attributionHeaders()` in `@deepseek-ai/dsh-llm`). Reproduced literally
- * because this plugin cannot import the harness package; keep it in step with
- * `APP_IDENTITY` in `packages/llm/llm/src/attribution.ts`.
- */
-export const DEFAULT_USER_AGENT = 'deepseek-harness (+https://github.com/deepseek-ai/deepseek-harness)'
+/** Per-read stream idle watchdog default, matching the shipped remote adapters. */
+export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300_000
+
+/** `setTimeout`'s maximum delay; a larger configured timeout is rejected at load. */
+export const MAX_TIMER_DELAY_MS = 2_147_483_647
 
 /** One wire message chatjimmy accepts. */
 export interface WireMessage {
@@ -69,6 +68,13 @@ export interface ChatJimmyConfig {
   model: string
   topK: number
   contextWindow: number
+  /** Per-read idle watchdog: a stream that produces nothing for this long fails with `TIMEOUT`. */
+  streamIdleTimeoutMs: number
+  /**
+   * Provider-owned retry policy, reported to the harness at registration. Absent
+   * means the harness's own normal defaults.
+   */
+  retryPolicy?: RetryPolicyConfig
 }
 
 /** Flatten a block tree to the plain text the wire can carry. */

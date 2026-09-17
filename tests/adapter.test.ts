@@ -9,6 +9,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
+import { attributionHeaders } from '@deepseek-ai/dsh-llm'
+
 import { ChatJimmyAdapter, CONTEXT_WINDOW_EXCEEDED_CODE, type FetchLike } from '../src/adapter.ts'
 import { resolveConfig } from '../src/index.ts'
 import type { GenerateOptions, StreamChunk } from '../src/host.ts'
@@ -119,6 +121,60 @@ test('advertises one text-only model with the measured context window', async ()
   assert.equal(adapter.imageRequestPricing('chatjimmy', 'llama3.1-8B'), undefined)
 })
 
+test('a configured retry policy is reported resolved, an absent one as undefined', () => {
+  const configured = new ChatJimmyAdapter(
+    { ...CONFIG, retryPolicy: { mode: 'normal', maxRetries: 2 } },
+    async () => streamResponse([]),
+  )
+  assert.deepEqual(configured.providerRetryPolicy('chatjimmy'), {
+    mode: 'normal',
+    maxRetries: 2,
+    retryableCodes: ['EMPTY_RESPONSE', 'RATE_LIMIT', 'SERVER', 'TIMEOUT', 'TRANSPORT'],
+    initialDelayMs: 500,
+    maxDelayMs: 10_000,
+    jitterRatio: 0.1,
+  })
+  assert.equal(adapterWith(streamResponse([])).providerRetryPolicy('chatjimmy'), undefined)
+})
+
+test('a caller abort ends as aborted, not as a provider error', async () => {
+  const controller = new AbortController()
+  const adapter = new ChatJimmyAdapter(CONFIG, async (_url, _init) => {
+    controller.abort()
+    throw new Error('aborted')
+  })
+  const chunks: StreamChunk[] = []
+  for await (const chunk of adapter.stream({ ...OPTIONS, signal: controller.signal })) chunks.push(chunk)
+  const only = chunks[0] as { reason: { kind: string; failure: { code: string } } }
+  assert.equal(only.reason.kind, 'aborted')
+  assert.equal(only.reason.failure.code, 'ABORTED')
+})
+
+test('a stalled stream ends with TIMEOUT at the configured idle bound', async () => {
+  const adapter = new ChatJimmyAdapter({ ...CONFIG, streamIdleTimeoutMs: 20 }, async (_url, init) => {
+    const signal = init.signal
+    return new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        signal?.addEventListener('abort', () => controller.error(new Error('idle abort')))
+      },
+    }), { status: 200, headers: { 'content-type': 'text/event-stream' } })
+  })
+  const chunks = await collect(adapter)
+  const only = chunks[0] as { reason: { kind: string; failure: { code: string; message: string } } }
+  assert.equal(only.reason.kind, 'error')
+  assert.equal(only.reason.failure.code, 'TIMEOUT')
+  assert.match(only.reason.failure.message, /20ms/)
+})
+
+test('a request that sets stop sequences is refused instead of dropped', async () => {
+  const chunks: StreamChunk[] = []
+  for await (const chunk of adapterWith(streamResponse(['never sent'])).stream({ ...OPTIONS, stop: ['END'] })) {
+    chunks.push(chunk)
+  }
+  const only = chunks[0] as { reason: { failure: { code: string } } }
+  assert.equal(only.reason.failure.code, 'UNSUPPORTED_OPTION')
+})
+
 test('the wire request carries attribution and the documented body', async () => {
   let seen: { url: string; init: RequestInit } | undefined
   const adapter = new ChatJimmyAdapter(CONFIG, async (url, init) => {
@@ -129,7 +185,10 @@ test('the wire request carries attribution and the documented body', async () =>
   assert.equal(seen?.url, 'https://chatjimmy.ai/api/chat')
   assert.equal(seen?.init.method, 'POST')
   const headers = seen?.init.headers as Record<string, string>
-  assert.match(headers['user-agent'] ?? '', /^deepseek-harness \(\+https:\/\/github\.com\/deepseek-ai\/deepseek-harness\)$/)
+  // Assert against the live helper, never a pinned copy that could drift.
+  const userAgent = String(attributionHeaders()['user-agent'])
+  assert.equal(headers['user-agent'], userAgent)
+  assert.match(userAgent, /^deepseek-harness\/\S+ \(\+https:\/\/github\.com\/deepseek-ai\/deepseek-harness\)$/)
   assert.deepEqual(JSON.parse(String(seen?.init.body)), {
     messages: [{ role: 'user', content: 'hi' }],
     chatOptions: { selectedModel: 'llama3.1-8B', systemPrompt: '', topK: 8 },

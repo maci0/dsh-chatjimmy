@@ -81,6 +81,9 @@ test('config rejects an unusable row instead of defaulting it', () => {
   assert.throws(() => resolveConfig({ model: '  ' }), /non-empty/)
   assert.throws(() => resolveConfig({ topK: 0 }), /positive integer/)
   assert.throws(() => resolveConfig({ contextWindow: 1.5 }), /positive integer/)
+  // An absent retry policy stays absent, so the harness keeps its own defaults.
+  assert.equal(resolveConfig({}).retryPolicy, undefined)
+  assert.deepEqual(resolveConfig({ retryPolicy: { mode: 'always' } }).retryPolicy, { mode: 'always' })
 })
 
 test('splitter emits completion text and never leaks the sentinel', () => {

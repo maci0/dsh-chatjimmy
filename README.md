@@ -52,12 +52,13 @@ This is a **text-only route**. It is not an agent model.
 
 ## Install
 
-The plugin carries **no runtime dependency on `@deepseek-ai/*`**: it is
-installed outside the harness checkout, cannot resolve those packages from its
-own directory, and so declares the host surface structurally in `src/host.ts`.
-`LlmRuntime` reaches adapters through plain method calls and never performs an
-`instanceof LlmAdapter` check, which makes a duck-typed adapter a supported
-shape. Keep it that way and the plugin stays a plain dependency.
+The plugin's only runtime dependency on `@deepseek-ai/*` is
+`@deepseek-ai/dsh-llm`, for two pure helpers: `attributionHeaders()` (the
+`User-Agent` every provider request must carry) and `resolveRetryPolicy()`.
+Nothing else about the host is imported — the surface it touches is declared
+structurally in `src/host.ts`. `LlmRuntime` reaches adapters through plain
+method calls and never performs an `instanceof LlmAdapter` check, which makes a
+duck-typed adapter a supported shape.
 
 ```sh
 dsh plugin --profile web add /home/maci/dsh-plugins/dsh-chatjimmy
@@ -87,6 +88,7 @@ ids, and two rows would register the plugin twice (`DUPLICATE_ADAPTER`).
 | `model` | `llama3.1-8B` | Sent as `chatOptions.selectedModel`. The service accepts any string. |
 | `topK` | `8` | Forwarded as `chatOptions.topK`. The site's client sends 8. |
 | `contextWindow` | `6144` | Capacity reported to the harness. Change only if the backend changes. |
+| `retryPolicy` | *(absent)* | Provider-owned retry policy in the harness `RetryPolicyConfig` shape, e.g. `{ mode: normal, maxRetries: 2 }`. Absent leaves the harness's normal defaults. |
 
 An invalid row throws at load rather than being silently defaulted — a typo'd
 `baseUrl` should not surface later as an opaque transport failure.
@@ -101,7 +103,9 @@ tsc -p tsconfig.json
 `tests/protocol.test.ts` covers the wire-body projection and the stats splitter
 (including every single-character split point of the sentinel).
 `tests/adapter.test.ts` covers the stream contract and both failure signatures
-over a stubbed fetch.
+over a stubbed fetch. `tests/composition.test.ts` mounts the plugin into a real
+Cordis `Context` and proves the route is registered and withdrawn with the
+fiber.
 
 ## Attribution
 

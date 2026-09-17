@@ -12,9 +12,10 @@
  * @module dsh-chatjimmy/adapter
  */
 
+import { attributionHeaders, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
+import type { ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
 import {
   buildChatRequest,
-  DEFAULT_USER_AGENT,
   isContextLimitReason,
   mapUsage,
   StatsStreamFilter,
@@ -70,6 +71,32 @@ function errorFinish(failure: LlmFailure): StreamChunk {
   return { type: 'finish', reason: { kind: 'error', failure } }
 }
 
+/**
+ * Terminal abort finish. Caller cancellation is not a provider failure, so it
+ * uses the `aborted` reason the protocol reserves for it.
+ */
+function abortFinish(): StreamChunk {
+  return { type: 'finish', reason: { kind: 'aborted', failure: { message: 'chatjimmy: request aborted by caller', code: 'ABORTED' } } }
+}
+
+/**
+ * A `GenerateOptions` field the service has no wire slot for. Stop sequences
+ * change generation semantics, so they are refused rather than dropped; the
+ * text-only capability limits (tools, temperature, maxTokens) stay documented
+ * in `README.md` and are ignored, since every agent request carries tools.
+ * @param options - the request being prepared.
+ * @returns the failure to end the stream with, or `undefined` when the request is servable.
+ */
+function unsupportedOptionFailure(options: GenerateOptions): LlmFailure | undefined {
+  if (options.stop !== undefined && options.stop.length > 0) {
+    return {
+      message: 'chatjimmy accepts no stop sequences; remove the stop list or use a route that supports it',
+      code: 'UNSUPPORTED_OPTION',
+    }
+  }
+  return undefined
+}
+
 /** Read a failed response body as the service's JSON error envelope. */
 async function errorDetail(response: Response): Promise<string> {
   try {
@@ -102,9 +129,10 @@ export function finishReasonFor(stats: ChatStats | undefined): FinishReason {
  * Duck-typed adapter over `POST /api/chat`.
  *
  * `LlmRuntime` reaches adapters through plain method calls, so this object
- * needs no harness base class and the plugin keeps zero runtime dependency on
- * `@deepseek-ai/*` — the same posture as the other plugins under
- * `~/dsh-plugins`.
+ * needs no harness base class. The plugin's only runtime dependency on
+ * `@deepseek-ai/*` is `@deepseek-ai/dsh-llm`'s pure helpers —
+ * `attributionHeaders()` and `resolveRetryPolicy()` — never its error classes
+ * or adapter base class.
  */
 export class ChatJimmyAdapter implements LlmAdapterLike {
   readonly #config: ChatJimmyConfig
@@ -125,16 +153,17 @@ export class ChatJimmyAdapter implements LlmAdapterLike {
   }
 
   /**
-   * No provider-owned retry policy: the service is stateless and fast, so the
-   * harness defaults are right.
+   * The provider-owned retry policy from configuration, already resolved, or
+   * `undefined` to leave the harness's normal defaults in place.
    *
    * This and {@link imageRequestPricing} exist because `LlmRuntime` calls them
    * on every dispatch. A harness `LlmAdapter` subclass inherits them; a
    * duck-typed adapter must supply them or the very first registration throws
    * `adapter.providerRetryPolicy is not a function`.
    */
-  providerRetryPolicy(_provider: string): undefined {
-    return undefined
+  providerRetryPolicy(_provider: string): ResolvedRetryPolicy | undefined {
+    const policy = this.#config.retryPolicy
+    return policy === undefined ? undefined : resolveRetryPolicy(policy, 'chatjimmy: retryPolicy')
   }
 
   /** No route charges visual tokens: this adapter is text-only. */
@@ -189,23 +218,50 @@ export class ChatJimmyAdapter implements LlmAdapterLike {
    * `CONTEXT_WINDOW_EXCEEDED` rather than as an empty completion.
    */
   async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+    const unsupported = unsupportedOptionFailure(options)
+    if (unsupported !== undefined) {
+      yield errorFinish(unsupported)
+      return
+    }
+
+    // The idle watchdog owns its own controller so a stalled body read can be
+    // torn down; the caller's signal is combined with it when present.
+    const consumer = new AbortController()
+    const signal = options.signal === undefined
+      ? consumer.signal
+      : AbortSignal.any([options.signal, consumer.signal])
+    let idleTimedOut = false
+    let idleTimer: NodeJS.Timeout | undefined
+    const armIdle = (): void => {
+      if (idleTimer !== undefined) clearTimeout(idleTimer)
+      idleTimer = setTimeout(() => {
+        idleTimedOut = true
+        consumer.abort('chatjimmy: stream idle timeout')
+      }, this.#config.streamIdleTimeoutMs)
+    }
+
     const headers: Record<string, string> = {
       'content-type': 'application/json',
       'accept': 'text/event-stream',
-      'user-agent': DEFAULT_USER_AGENT,
+      ...attributionHeaders(),
     }
 
     let response: Response
+    armIdle()
     try {
       response = await this.#fetch(`${this.#config.baseUrl}/api/chat`, {
         method: 'POST',
         headers,
         body: JSON.stringify(buildChatRequest(options, this.#config)),
-        ...options.signal === undefined ? {} : { signal: options.signal },
+        signal,
       })
     } catch (error) {
+      if (idleTimedOut) {
+        yield errorFinish(idleTimeoutFailure(this.#config.streamIdleTimeoutMs))
+        return
+      }
       if (options.signal?.aborted === true) {
-        yield errorFinish({ message: 'chatjimmy: request aborted', code: 'ABORTED' })
+        yield abortFinish()
         return
       }
       yield errorFinish({
@@ -213,6 +269,8 @@ export class ChatJimmyAdapter implements LlmAdapterLike {
         code: 'TRANSPORT',
       })
       return
+    } finally {
+      if (idleTimer !== undefined) clearTimeout(idleTimer)
     }
 
     if (!response.ok) {
@@ -233,7 +291,9 @@ export class ChatJimmyAdapter implements LlmAdapterLike {
     let assembled = ''
 
     try {
+      armIdle()
       for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
+        armIdle()
         const text = filter.push(decoder.decode(chunk, { stream: true }))
         if (text.length === 0) continue
         if (!open) {
@@ -244,8 +304,12 @@ export class ChatJimmyAdapter implements LlmAdapterLike {
         yield { type: 'text-delta', index, text }
       }
     } catch (error) {
+      if (idleTimedOut) {
+        yield errorFinish(idleTimeoutFailure(this.#config.streamIdleTimeoutMs))
+        return
+      }
       if (options.signal?.aborted === true) {
-        yield errorFinish({ message: 'chatjimmy: request aborted', code: 'ABORTED' })
+        yield abortFinish()
         return
       }
       yield errorFinish({
@@ -253,6 +317,8 @@ export class ChatJimmyAdapter implements LlmAdapterLike {
         code: 'TRANSPORT',
       })
       return
+    } finally {
+      if (idleTimer !== undefined) clearTimeout(idleTimer)
     }
 
     const tail = filter.push(decoder.decode()) + filter.flush()
@@ -271,8 +337,22 @@ export class ChatJimmyAdapter implements LlmAdapterLike {
       return
     }
     yield { type: 'block-end', index, block: { type: 'text', text: assembled } }
-    yield { type: 'usage', usage: mapUsage(stats) }
+    // Usage is reported only when the provider reported it; a synthesized zero
+    // would claim a measurement that never happened.
+    if (stats !== undefined) yield { type: 'usage', usage: mapUsage(stats) }
     yield { type: 'finish', reason: finishReasonFor(stats) }
+  }
+}
+
+/**
+ * The failure for a stream that produced nothing within the configured bound.
+ * @param idleTimeoutMs - the configured per-read bound.
+ * @returns the terminal failure, coded `TIMEOUT`.
+ */
+function idleTimeoutFailure(idleTimeoutMs: number): LlmFailure {
+  return {
+    message: `chatjimmy: no stream data for ${idleTimeoutMs}ms (streamIdleTimeoutMs); the request was abandoned`,
+    code: 'TIMEOUT',
   }
 }
 

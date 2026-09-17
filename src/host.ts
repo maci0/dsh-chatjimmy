@@ -2,9 +2,10 @@
  * The slice of the DeepSeek Harness host surface this plugin uses, declared
  * structurally.
  *
- * Like the other plugins under `~/dsh-plugins`, this package is installed
- * outside the harness checkout and cannot resolve `@deepseek-ai/*` from its own
- * directory, so it carries no runtime dependency on them. The harness reaches
+ * Like the other plugins under `~/dsh-plugins`, this package declares the host
+ * surface it consumes rather than depending on the harness's own classes: its
+ * one runtime `@deepseek-ai/*` dependency is `@deepseek-ai/dsh-llm`'s pure
+ * `attributionHeaders()` / `resolveRetryPolicy()` helpers. The harness reaches
  * its adapters through plain method calls on the registered object — there is
  * no `instanceof LlmAdapter` check anywhere in `LlmRuntime` — so a duck-typed
  * adapter is a supported shape, not a workaround.
@@ -41,6 +42,14 @@ export interface GenerateOptions {
   readonly model: string
   readonly messages: readonly Message[]
   readonly system?: string
+  /**
+   * Stop sequences. The service has no wire slot for them, so the adapter
+   * refuses a request that sets any (`UNSUPPORTED_OPTION`) instead of
+   * generating past where the caller asked it to stop. Tool schemas,
+   * `temperature`, and `maxTokens` are declared capability limits in
+   * `README.md` and stay dropped.
+   */
+  readonly stop?: readonly string[]
   readonly signal?: AbortSignal
 }
 
@@ -63,6 +72,7 @@ export type FinishReason =
   | { readonly kind: 'stop' }
   | { readonly kind: 'max-tokens' }
   | { readonly kind: 'error'; readonly failure: LlmFailure }
+  | { readonly kind: 'aborted'; readonly failure: LlmFailure }
 
 /** The two chunk shapes this adapter emits, plus the terminal pair. */
 export type StreamChunk =
@@ -103,10 +113,10 @@ export interface PreparedAdapterCall {
  * by the harness at runtime; nothing about the object must be a harness class.
  *
  * The list is the full public surface of the harness `LlmAdapter` base class,
- * including the members that only have defaults there. `LlmRuntime` calls
- * `providerRetryPolicy` and `imageRequestPricing` on every dispatch, so a
- * duck-typed adapter that omits them throws on the first registration rather
- * than falling back to the base-class default.
+ * including the members that only have defaults there. `LlmRuntime` reads
+ * `providerRetryPolicy` while registering the adapter and `imageRequestPricing`
+ * during a token-meter measurement, so a duck-typed adapter that omits either
+ * throws instead of falling back to the base-class default.
  */
 export interface LlmAdapterLike {
   providerInfo(provider: string): LlmProviderInfo

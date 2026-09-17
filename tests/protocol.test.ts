@@ -79,11 +79,13 @@ test('config rejects an unusable row instead of defaulting it', () => {
   assert.throws(() => resolveConfig({ baseUrl: 'not a url' }), /not a valid absolute URL/)
   assert.throws(() => resolveConfig({ baseUrl: 'ftp://x.test' }), /must use http or https/)
   assert.throws(() => resolveConfig({ model: '  ' }), /non-empty/)
-  assert.throws(() => resolveConfig({ topK: 0 }), /positive integer/)
-  assert.throws(() => resolveConfig({ contextWindow: 1.5 }), /positive integer/)
+  // The numeric bounds live in the exported schema, which is what refuses these.
+  assert.throws(() => resolveConfig({ topK: 0 }), /topK/)
+  assert.throws(() => resolveConfig({ contextWindow: 1.5 }), /contextWindow/)
   // An absent retry policy stays absent, so the harness keeps its own defaults.
   assert.equal(resolveConfig({}).retryPolicy, undefined)
-  assert.deepEqual(resolveConfig({ retryPolicy: { mode: 'always' } }).retryPolicy, { mode: 'always' })
+  // The schema fills the policy's own backoff defaults, as the loader does before `apply`.
+  assert.equal(resolveConfig({ retryPolicy: { mode: 'always' } }).retryPolicy?.mode, 'always')
 })
 
 test('splitter emits completion text and never leaks the sentinel', () => {

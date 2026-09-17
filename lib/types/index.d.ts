@@ -13,7 +13,7 @@
  */
 import Schema from '@deepseek-ai/schemastery';
 import type { RetryPolicyConfig } from '@deepseek-ai/dsh-llm';
-import { type ChatJimmyConfig } from './protocol.ts';
+import type { ChatJimmyConfig } from './protocol.ts';
 import type { HostContext } from './host.ts';
 /** Plugin name as it appears in the loader. */
 export declare const name = "chatjimmy";
@@ -56,8 +56,12 @@ export declare const Config: Schema<Config>;
 /**
  * Validate and normalize one configuration row.
  *
- * Invalid values throw rather than being silently defaulted: a typo'd base URL
- * would otherwise present as an opaque transport failure on the first message.
+ * The row is fed back through the exported `Config` schema, which is the one
+ * source of the defaults and the numeric bounds — Cordis already ran the same
+ * schema before `apply`, so this only makes `resolveConfig` usable on its own.
+ * What the schema cannot express is checked here: invalid values throw rather
+ * than being silently defaulted, because a typo'd base URL would otherwise
+ * present as an opaque transport failure on the first message.
  *
  * @param config - raw row configuration.
  * @returns the resolved adapter configuration.

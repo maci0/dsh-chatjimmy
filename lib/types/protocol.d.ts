@@ -12,21 +12,6 @@ import type { ContentBlock, GenerateOptions, TokenUsage } from './host.ts';
 export declare const STATS_OPEN = "<|stats|>";
 /** Closing marker of the trailing generation-stats block. */
 export declare const STATS_CLOSE = "<|/stats|>";
-/**
- * Total context the backend enforces, in tokens, measured empirically:
- * a request whose reported `prefill_tokens` reached 6141 with 2 output tokens
- * succeeded, while one needing 6143 + 2 returned a zero-byte body. The site's
- * own client caps at the same number (`NEXT_PUBLIC_TOKEN_LIMIT`, default 6144).
- */
-export declare const CONTEXT_WINDOW = 6144;
-/** Model the service serves. `/api/models` advertises exactly this one id. */
-export declare const DEFAULT_MODEL = "llama3.1-8B";
-/** Base URL of the deployment. */
-export declare const DEFAULT_BASE_URL = "https://chatjimmy.ai";
-/** Per-read stream idle watchdog default, matching the shipped remote adapters. */
-export declare const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300000;
-/** `setTimeout`'s maximum delay; a larger configured timeout is rejected at load. */
-export declare const MAX_TIMER_DELAY_MS = 2147483647;
 /** One wire message chatjimmy accepts. */
 export interface WireMessage {
     role: 'user' | 'assistant';

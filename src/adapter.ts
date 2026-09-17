@@ -117,7 +117,7 @@ async function errorDetail(response: Response): Promise<string> {
  * Map the stats block's own stop reason onto a harness finish reason.
  * @param stats - parsed stats, when the stream carried them.
  */
-export function finishReasonFor(stats: ChatStats | undefined): FinishReason {
+function finishReasonFor(stats: ChatStats | undefined): FinishReason {
   if (isContextLimitReason(stats?.reason)) {
     return { kind: 'error', failure: contextLimitFailure(stats?.reason) }
   }
@@ -358,23 +358,29 @@ function idleTimeoutFailure(idleTimeoutMs: number): LlmFailure {
 
 /**
  * Classify a stream that produced no text at all.
+ *
+ * The stats block is classified once, by {@link finishReasonFor}: a stream that
+ * carries the backend's context-limit reason ends as that failure, a completed
+ * one is an `EMPTY_RESPONSE`. Only a stream with no stats at all falls back to
+ * the zero-byte overflow signature.
+ *
  * @param stats - stats the stream carried, if any.
  * @param contextWindow - capacity reported to the harness, named in the message.
  * @returns the terminal failure chunk.
  */
 function emptyStreamFinish(stats: ChatStats | undefined, contextWindow: number): StreamChunk {
-  if (stats !== undefined) {
-    return isContextLimitReason(stats.reason)
-      ? errorFinish(contextLimitFailure(stats.reason))
-      : errorFinish({
-          message: `chatjimmy: the model returned a completed response with no content`
-            + ` (reason: ${String(stats.reason ?? 'unknown')})`,
-          code: 'EMPTY_RESPONSE',
-        })
+  if (stats === undefined) {
+    return errorFinish({
+      message: `chatjimmy: the backend returned an empty stream. This is its signature for a request that overflowed`
+        + ` the ${contextWindow}-token total context (prompt + completion); shorten the conversation and retry.`,
+      code: CONTEXT_WINDOW_EXCEEDED_CODE,
+    })
   }
+  const reason = finishReasonFor(stats)
+  if (reason.kind === 'error') return errorFinish(reason.failure)
   return errorFinish({
-    message: `chatjimmy: the backend returned an empty stream. This is its signature for a request that overflowed`
-      + ` the ${contextWindow}-token total context (prompt + completion); shorten the conversation and retry.`,
-    code: CONTEXT_WINDOW_EXCEEDED_CODE,
+    message: `chatjimmy: the model returned a completed response with no content`
+      + ` (reason: ${String(stats.reason ?? 'unknown')})`,
+    code: 'EMPTY_RESPONSE',
   })
 }

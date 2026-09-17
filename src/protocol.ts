@@ -7,7 +7,7 @@
  * @module dsh-chatjimmy/protocol
  */
 
-import type { ContentBlock, GenerateOptions, Message, TokenUsage } from './host.ts'
+import type { ContentBlock, GenerateOptions, TokenUsage } from './host.ts'
 
 /** Opening marker of the trailing generation-stats block. */
 export const STATS_OPEN = '<|stats|>'
@@ -53,18 +53,13 @@ export interface ChatRequestBody {
   attachment: null
 }
 
-/** Generation stats the backend appends to a successful stream. */
+/** The stats fields this adapter reads; the payload carries more. */
 export interface ChatStats {
   prefill_tokens?: number
   decode_tokens?: number
   total_tokens?: number
-  topk?: number
-  done?: boolean
   done_reason?: string
   reason?: string
-  ttft?: number
-  decode_rate?: number
-  prefill_rate?: number
   [key: string]: unknown
 }
 
@@ -72,10 +67,8 @@ export interface ChatStats {
 export interface ChatJimmyConfig {
   baseUrl: string
   model: string
-  systemPrompt: string
   topK: number
   contextWindow: number
-  userAgent: string
 }
 
 /** Flatten a block tree to the plain text the wire can carry. */
@@ -103,43 +96,27 @@ export function flatten(blocks: readonly ContentBlock[]): string {
 }
 
 /**
- * Project harness history onto the wire shape.
- * @param options - the assembled request.
- * @param fallbackSystem - configured system prompt, used when history has none.
- * @returns the system prompt and the ordered non-system messages.
+ * Build the exact request body for one model call: history is flattened to
+ * text, every system-role message is hoisted into the single `systemPrompt`
+ * slot, and the caller's `system` text leads it.
  */
-export function projectHistory(
-  options: GenerateOptions,
-  fallbackSystem: string,
-): { systemPrompt: string; messages: WireMessage[] } {
+export function buildChatRequest(options: GenerateOptions, config: ChatJimmyConfig): ChatRequestBody {
   const systemParts: string[] = []
   const messages: WireMessage[] = []
-  for (const message of options.messages as readonly Message[]) {
+  for (const message of options.messages) {
     const text = flatten(message.content)
     if (message.role === 'system') {
       if (text.length > 0) systemParts.push(text)
       continue
     }
-    if (text.length === 0) continue
-    messages.push({ role: message.role, content: text })
+    if (text.length > 0) messages.push({ role: message.role, content: text })
   }
-  if (options.system !== undefined && options.system.length > 0) {
-    systemParts.unshift(options.system)
-  }
-  return {
-    systemPrompt: systemParts.length > 0 ? systemParts.join('\n\n') : fallbackSystem,
-    messages,
-  }
-}
-
-/** Build the exact request body for one model call. */
-export function buildChatRequest(options: GenerateOptions, config: ChatJimmyConfig): ChatRequestBody {
-  const { systemPrompt, messages } = projectHistory(options, config.systemPrompt)
+  if (options.system !== undefined && options.system.length > 0) systemParts.unshift(options.system)
   return {
     messages,
     chatOptions: {
       selectedModel: options.model.length > 0 ? options.model : config.model,
-      systemPrompt,
+      systemPrompt: systemParts.join('\n\n'),
       topK: config.topK,
     },
     attachment: null,

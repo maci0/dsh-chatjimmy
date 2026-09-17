@@ -85,10 +85,8 @@ ids, and two rows would register the plugin twice (`DUPLICATE_ADAPTER`).
 |---|---|---|
 | `baseUrl` | `https://chatjimmy.ai` | Deployment origin. Must be an absolute http(s) URL. |
 | `model` | `llama3.1-8B` | Sent as `chatOptions.selectedModel`. The service accepts any string. |
-| `systemPrompt` | `""` | Used only when the request history carries no system message. |
 | `topK` | `8` | Forwarded as `chatOptions.topK`. The site's client sends 8. |
 | `contextWindow` | `6144` | Capacity reported to the harness. Change only if the backend changes. |
-| `userAgent` | harness attribution | `User-Agent` on every request. |
 
 An invalid row throws at load rather than being silently defaulted — a typo'd
 `baseUrl` should not surface later as an opaque transport failure.

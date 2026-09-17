@@ -7,8 +7,13 @@
  * directory, so it carries no runtime dependency on them. The harness reaches
  * its adapters through plain method calls on the registered object — there is
  * no `instanceof LlmAdapter` check anywhere in `LlmRuntime` — so a duck-typed
- * adapter is a supported shape, not a workaround. The host types remain
- * authoritative.
+ * adapter is a supported shape, not a workaround.
+ *
+ * Each declaration here is deliberately narrowed to what this adapter reads or
+ * emits. Mirroring a foreign API in full is not documentation: a field we never
+ * touch is a field whose absence goes unnoticed, which is how the missing
+ * `providerRetryPolicy` reached an integration test instead of a compiler.
+ * Widen a declaration when the adapter starts using it, not before.
  *
  * @module dsh-chatjimmy/host
  */
@@ -31,26 +36,12 @@ export interface Message {
   readonly content: readonly ContentBlock[]
 }
 
-/** JSON-schema description of a tool the caller offered. */
-export interface ToolSchema {
-  readonly name: string
-  readonly description: string
-  readonly parameters: Record<string, unknown>
-}
-
-/** A single model request, fully assembled by the harness. */
+/** A single model request, narrowed to the fields this adapter reads. */
 export interface GenerateOptions {
-  readonly provider: string
   readonly model: string
   readonly messages: readonly Message[]
   readonly system?: string
-  readonly tools?: readonly ToolSchema[]
-  readonly temperature?: number
-  readonly maxTokens?: number
-  readonly stop?: readonly string[]
   readonly signal?: AbortSignal
-  readonly sessionId?: string
-  readonly purpose?: 'compaction' | 'session-title'
 }
 
 /** Token accounting for one model call. */
@@ -60,13 +51,6 @@ export interface TokenUsage {
   totalTokens?: number
 }
 
-/** Why a model response stopped. */
-export type FinishReason =
-  | { readonly kind: 'stop' }
-  | { readonly kind: 'max-tokens' }
-  | { readonly kind: 'aborted'; readonly failure: LlmFailure }
-  | { readonly kind: 'error'; readonly failure: LlmFailure }
-
 /** Stable provider-neutral failure shape. */
 export interface LlmFailure {
   readonly message: string
@@ -74,14 +58,19 @@ export interface LlmFailure {
   readonly status?: number
 }
 
-/** Raw streaming protocol emitted by adapters. */
+/** Why a model response stopped. */
+export type FinishReason =
+  | { readonly kind: 'stop' }
+  | { readonly kind: 'max-tokens' }
+  | { readonly kind: 'error'; readonly failure: LlmFailure }
+
+/** The two chunk shapes this adapter emits, plus the terminal pair. */
 export type StreamChunk =
   | { readonly type: 'block-start'; readonly index: number; readonly blockType: string }
   | { readonly type: 'text-delta'; readonly index: number; readonly text: string }
-  | { readonly type: 'reasoning-delta'; readonly index: number; readonly text: string }
   | { readonly type: 'block-end'; readonly index: number; readonly block: ContentBlock }
   | { readonly type: 'usage'; readonly usage: TokenUsage }
-  | { readonly type: 'finish'; readonly reason: FinishReason; readonly replayState?: unknown }
+  | { readonly type: 'finish'; readonly reason: FinishReason }
 
 /** Display metadata for one adapter-owned provider route. */
 export interface LlmProviderInfo {
@@ -101,7 +90,6 @@ export interface LlmModelInfo {
 /** Exact-route model metadata resolved by its owning adapter. */
 export interface LlmResolvedModelInfo extends LlmModelInfo {
   readonly context?: { readonly contextWindow: number }
-  readonly defaultMaxTokens?: number
 }
 
 /** What `prepareCall` binds: exact model metadata plus one-generation dispatch. */
@@ -114,7 +102,7 @@ export interface PreparedAdapterCall {
  * The adapter face `ctx.llm.registerAdapter()` consumes. Every member is called
  * by the harness at runtime; nothing about the object must be a harness class.
  *
- * The list is the *full* public surface of the harness `LlmAdapter` base class,
+ * The list is the full public surface of the harness `LlmAdapter` base class,
  * including the members that only have defaults there. `LlmRuntime` calls
  * `providerRetryPolicy` and `imageRequestPricing` on every dispatch, so a
  * duck-typed adapter that omits them throws on the first registration rather
@@ -140,7 +128,5 @@ export interface HostContext {
   readonly llm: LlmServiceLike
   readonly logger: {
     info(message: unknown): void
-    warn(message: unknown): void
-    error(message: unknown): void
   }
 }

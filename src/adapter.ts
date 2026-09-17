@@ -6,7 +6,7 @@
  * sampling parameters, and returns one plain-text stream. This adapter is
  * therefore honest about being a text-only route — it advertises
  * `inputModalities: ['text']` so `LlmRuntime` projects files and images to
- * placeholder text before dispatch, and it ignores `options.tools` rather than
+ * placeholder text before dispatch, and it ignores every tool field rather than
  * pretending the model can call them.
  *
  * @module dsh-chatjimmy/adapter
@@ -36,11 +36,11 @@ import type {
 /** Stable failure used when the backend answers with a zero-byte stream body. */
 export const CONTEXT_WINDOW_EXCEEDED_CODE = 'CONTEXT_WINDOW_EXCEEDED'
 
-/** Injectable fetch, so the adapter is testable without a network. */
-export type FetchLike = (input: string, init: RequestInit) => Promise<Response>
-
 const CONFIGURED_MODEL_DESCRIPTION =
   'Taalas-hosted Llama 3.1 8B served by chatjimmy.ai. Text only: no tool calls, no images, 6144-token total context.'
+
+/** Injectable fetch, so the adapter is testable without a network. */
+export type FetchLike = (input: string, init: RequestInit) => Promise<Response>
 
 /**
  * Maps an HTTP status onto a provider-neutral failure code. The service emits
@@ -58,6 +58,11 @@ function failureForStatus(status: number, detail: string): LlmFailure {
           ? 'SERVER'
           : 'TRANSPORT'
   return { message: `chatjimmy: HTTP ${status}${detail.length > 0 ? ` — ${detail}` : ''}`, code, status }
+}
+
+/** The one failure the backend's own context-limit refusal produces. */
+function contextLimitFailure(reason: unknown): LlmFailure {
+  return { message: `chatjimmy: ${String(reason)}`, code: CONTEXT_WINDOW_EXCEEDED_CODE }
 }
 
 /** Terminal error finish carrying one failure. */
@@ -82,6 +87,18 @@ async function errorDetail(response: Response): Promise<string> {
 }
 
 /**
+ * Map the stats block's own stop reason onto a harness finish reason.
+ * @param stats - parsed stats, when the stream carried them.
+ */
+export function finishReasonFor(stats: ChatStats | undefined): FinishReason {
+  if (isContextLimitReason(stats?.reason)) {
+    return { kind: 'error', failure: contextLimitFailure(stats?.reason) }
+  }
+  if (stats?.done_reason === 'length') return { kind: 'max-tokens' }
+  return { kind: 'stop' }
+}
+
+/**
  * Duck-typed adapter over `POST /api/chat`.
  *
  * `LlmRuntime` reaches adapters through plain method calls, so this object
@@ -90,15 +107,14 @@ async function errorDetail(response: Response): Promise<string> {
  * `~/dsh-plugins`.
  */
 export class ChatJimmyAdapter implements LlmAdapterLike {
-  readonly #config: () => ChatJimmyConfig
+  readonly #config: ChatJimmyConfig
   readonly #fetch: FetchLike
 
   /**
-   * @param config - reads the current configuration on every operation, so a
-   *   settings change reaches the next request without a remount.
+   * @param config - the resolved configuration this adapter serves.
    * @param fetchImpl - transport override for tests.
    */
-  constructor(config: () => ChatJimmyConfig, fetchImpl: FetchLike = globalThis.fetch) {
+  constructor(config: ChatJimmyConfig, fetchImpl: FetchLike = globalThis.fetch) {
     this.#config = config
     this.#fetch = fetchImpl
   }
@@ -132,10 +148,9 @@ export class ChatJimmyAdapter implements LlmAdapterLike {
    * picker open. The id stays advisory: any id is accepted on the wire.
    */
   listModels(provider: string): Promise<readonly LlmModelInfo[]> {
-    const config = this.#config()
     return Promise.resolve([{
       provider,
-      id: config.model,
+      id: this.#config.model,
       name: 'Llama 3.1 8B (Chat Jimmy)',
       description: CONFIGURED_MODEL_DESCRIPTION,
       inputModalities: ['text'],
@@ -144,14 +159,13 @@ export class ChatJimmyAdapter implements LlmAdapterLike {
 
   /** {@inheritDoc LlmAdapterLike.resolveModel} */
   resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo> {
-    const config = this.#config()
     return Promise.resolve({
       provider,
       id: model,
-      name: model === config.model ? 'Llama 3.1 8B (Chat Jimmy)' : model,
+      name: model === this.#config.model ? 'Llama 3.1 8B (Chat Jimmy)' : model,
       description: CONFIGURED_MODEL_DESCRIPTION,
       inputModalities: ['text'],
-      context: { contextWindow: config.contextWindow },
+      context: { contextWindow: this.#config.contextWindow },
     })
   }
 
@@ -175,20 +189,18 @@ export class ChatJimmyAdapter implements LlmAdapterLike {
    * `CONTEXT_WINDOW_EXCEEDED` rather than as an empty completion.
    */
   async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
-    const config = this.#config()
-    const body = buildChatRequest(options, config)
     const headers: Record<string, string> = {
       'content-type': 'application/json',
       'accept': 'text/event-stream',
-      'user-agent': config.userAgent.length > 0 ? config.userAgent : DEFAULT_USER_AGENT,
+      'user-agent': DEFAULT_USER_AGENT,
     }
 
     let response: Response
     try {
-      response = await this.#fetch(`${config.baseUrl}/api/chat`, {
+      response = await this.#fetch(`${this.#config.baseUrl}/api/chat`, {
         method: 'POST',
         headers,
-        body: JSON.stringify(body),
+        body: JSON.stringify(buildChatRequest(options, this.#config)),
         ...options.signal === undefined ? {} : { signal: options.signal },
       })
     } catch (error) {
@@ -253,45 +265,36 @@ export class ChatJimmyAdapter implements LlmAdapterLike {
       yield { type: 'text-delta', index, text: tail }
     }
 
-    const stats: ChatStats | undefined = filter.stats
+    const stats = filter.stats
     if (!open) {
-      yield this.#emptyStreamFinish(stats)
+      yield emptyStreamFinish(stats, this.#config.contextWindow)
       return
     }
     yield { type: 'block-end', index, block: { type: 'text', text: assembled } }
     yield { type: 'usage', usage: mapUsage(stats) }
     yield { type: 'finish', reason: finishReasonFor(stats) }
   }
-
-  /**
-   * Classify a stream that produced no text at all.
-   * @param stats - stats the stream carried, if any.
-   * @returns the terminal failure chunk.
-   */
-  #emptyStreamFinish(stats: ChatStats | undefined): StreamChunk {
-    if (stats !== undefined && isContextLimitReason(stats.reason)) {
-      return errorFinish({ message: `chatjimmy: ${String(stats.reason)}`, code: CONTEXT_WINDOW_EXCEEDED_CODE })
-    }
-    if (stats !== undefined) {
-      return errorFinish({
-        message: `chatjimmy: the model returned a completed response with no content (reason: ${String(stats.reason ?? 'unknown')})`,
-        code: 'EMPTY_RESPONSE',
-      })
-    }
-    const { contextWindow } = this.#config()
-    return errorFinish({
-      message: `chatjimmy: the backend returned an empty stream. This is its signature for a request that overflowed`
-        + ` the ${contextWindow}-token total context (prompt + completion); shorten the conversation and retry.`,
-      code: CONTEXT_WINDOW_EXCEEDED_CODE,
-    })
-  }
 }
 
-/** Map the stats block's own stop reason onto a harness finish reason. */
-export function finishReasonFor(stats: ChatStats | undefined): FinishReason {
-  if (stats !== undefined && isContextLimitReason(stats.reason)) {
-    return { kind: 'error', failure: { message: `chatjimmy: ${String(stats.reason)}`, code: CONTEXT_WINDOW_EXCEEDED_CODE } }
+/**
+ * Classify a stream that produced no text at all.
+ * @param stats - stats the stream carried, if any.
+ * @param contextWindow - capacity reported to the harness, named in the message.
+ * @returns the terminal failure chunk.
+ */
+function emptyStreamFinish(stats: ChatStats | undefined, contextWindow: number): StreamChunk {
+  if (stats !== undefined) {
+    return isContextLimitReason(stats.reason)
+      ? errorFinish(contextLimitFailure(stats.reason))
+      : errorFinish({
+          message: `chatjimmy: the model returned a completed response with no content`
+            + ` (reason: ${String(stats.reason ?? 'unknown')})`,
+          code: 'EMPTY_RESPONSE',
+        })
   }
-  if (stats?.done_reason === 'length') return { kind: 'max-tokens' }
-  return { kind: 'stop' }
+  return errorFinish({
+    message: `chatjimmy: the backend returned an empty stream. This is its signature for a request that overflowed`
+      + ` the ${contextWindow}-token total context (prompt + completion); shorten the conversation and retry.`,
+    code: CONTEXT_WINDOW_EXCEEDED_CODE,
+  })
 }

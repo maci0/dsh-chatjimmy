@@ -13,19 +13,17 @@ import {
   isContextLimitReason,
   mapUsage,
   parseStats,
-  projectHistory,
-  resolveConfig,
   STATS_CLOSE,
   STATS_OPEN,
   StatsStreamFilter,
-} from '../src/index.ts'
+} from '../src/protocol.ts'
+import { resolveConfig } from '../src/index.ts'
 import type { GenerateOptions } from '../src/host.ts'
 
 const CONFIG = resolveConfig()
 
 function request(overrides: Partial<GenerateOptions> = {}): GenerateOptions {
   return {
-    provider: 'chatjimmy',
     model: 'llama3.1-8B',
     messages: [
       { id: '1', role: 'system', content: [{ type: 'text', text: 'be brief' }] },
@@ -37,22 +35,28 @@ function request(overrides: Partial<GenerateOptions> = {}): GenerateOptions {
   }
 }
 
-test('projects harness history onto the wire shape', () => {
-  const { systemPrompt, messages } = projectHistory(request(), '')
-  assert.equal(systemPrompt, 'be brief')
-  assert.deepEqual(messages, [
-    { role: 'user', content: 'hello' },
-    { role: 'assistant', content: 'hi' },
-    { role: 'user', content: 'again' },
-  ])
+test('builds the exact documented request body', () => {
+  assert.deepEqual(buildChatRequest(request(), CONFIG), {
+    messages: [
+      { role: 'user', content: 'hello' },
+      { role: 'assistant', content: 'hi' },
+      { role: 'user', content: 'again' },
+    ],
+    chatOptions: { selectedModel: 'llama3.1-8B', systemPrompt: 'be brief', topK: 8 },
+    attachment: null,
+  })
 })
 
-test('one-shot system text wins and empty history drops out', () => {
-  const { systemPrompt, messages } = projectHistory(request({ system: 'override' }), 'configured')
-  assert.equal(systemPrompt, 'override\n\nbe brief')
-  assert.equal(messages.length, 3)
-  assert.deepEqual(projectHistory({ ...request({ messages: [] }) }, 'configured').messages, [])
-  assert.equal(projectHistory(request({ messages: [] }), 'configured').systemPrompt, 'configured')
+test('one-shot system text leads the hoisted history', () => {
+  const body = buildChatRequest(request({ system: 'override' }), CONFIG)
+  assert.equal(body.chatOptions.systemPrompt, 'override\n\nbe brief')
+  assert.equal(body.messages.length, 3)
+})
+
+test('empty history and empty system leave both slots empty', () => {
+  const body = buildChatRequest({ model: 'llama3.1-8B', messages: [] }, CONFIG)
+  assert.deepEqual(body.messages, [])
+  assert.equal(body.chatOptions.systemPrompt, '')
 })
 
 test('renders tool blocks as prose because the service has no tool protocol', () => {
@@ -63,19 +67,6 @@ test('renders tool blocks as prose because the service has no tool protocol', ()
     { type: 'image', attachment: {} },
   ])
   assert.equal(text, 'a[tool call] read({"path":"x"})[tool result] ok')
-})
-
-test('builds the exact documented request body', () => {
-  const body = buildChatRequest(request(), CONFIG)
-  assert.deepEqual(body, {
-    messages: [
-      { role: 'user', content: 'hello' },
-      { role: 'assistant', content: 'hi' },
-      { role: 'user', content: 'again' },
-    ],
-    chatOptions: { selectedModel: 'llama3.1-8B', systemPrompt: 'be brief', topK: 8 },
-    attachment: null,
-  })
 })
 
 test('an empty model id falls back to the configured one', () => {
@@ -115,8 +106,7 @@ test('splitter holds back a marker split across chunk boundaries', () => {
 
 test('splitter releases residual text when no sentinel ever arrives', () => {
   const filter = new StatsStreamFilter()
-  let out = filter.push('partial answer')
-  out += filter.flush()
+  const out = filter.push('partial answer') + filter.flush()
   assert.equal(out, 'partial answer')
   assert.equal(filter.stats, undefined)
 })

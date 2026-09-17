@@ -1,6 +1,6 @@
 {
   "name": "dsh-chatjimmy",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "chatjimmy.ai provider adapter for DeepSeek Harness (text-only route, 6144-token context)",

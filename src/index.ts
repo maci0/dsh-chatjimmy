@@ -17,7 +17,6 @@ import {
   CONTEXT_WINDOW,
   DEFAULT_BASE_URL,
   DEFAULT_MODEL,
-  DEFAULT_USER_AGENT,
   type ChatJimmyConfig,
 } from './protocol.ts'
 import type { HostContext } from './host.ts'
@@ -43,8 +42,6 @@ export interface Config {
   readonly baseUrl?: string
   /** Model id sent as `chatOptions.selectedModel`. Defaults to `llama3.1-8B`. */
   readonly model?: string
-  /** System prompt used when the request history carries none. Defaults to empty. */
-  readonly systemPrompt?: string
   /** Forwarded as `chatOptions.topK`. The site's own client sends 8. */
   readonly topK?: number
   /**
@@ -52,8 +49,6 @@ export interface Config {
    * against the live service at 6144 (prompt + completion).
    */
   readonly contextWindow?: number
-  /** `User-Agent` sent on every request; carries harness attribution by default. */
-  readonly userAgent?: string
 }
 
 /**
@@ -89,14 +84,7 @@ export function resolveConfig(config: Config = {}): ChatJimmyConfig {
     throw new Error(`chatjimmy: contextWindow must be a positive integer, got ${String(config.contextWindow)}`)
   }
 
-  return {
-    baseUrl,
-    model,
-    systemPrompt: config.systemPrompt ?? '',
-    topK,
-    contextWindow,
-    userAgent: config.userAgent ?? DEFAULT_USER_AGENT,
-  }
+  return { baseUrl, model, topK, contextWindow }
 }
 
 /**
@@ -106,29 +94,9 @@ export function resolveConfig(config: Config = {}): ChatJimmyConfig {
  */
 export function apply(ctx: HostContext, config: Config = {}): void {
   const resolved = resolveConfig(config)
-  const adapter = new ChatJimmyAdapter(() => resolved)
-  ctx.llm.registerAdapter([PROVIDER], adapter)
+  ctx.llm.registerAdapter([PROVIDER], new ChatJimmyAdapter(resolved))
   ctx.logger.info(
     `chatjimmy: provider "${PROVIDER}" registered for model "${resolved.model}" at ${resolved.baseUrl}`
       + ` (text only, ${resolved.contextWindow}-token total context)`,
   )
 }
-
-export { ChatJimmyAdapter, finishReasonFor, CONTEXT_WINDOW_EXCEEDED_CODE } from './adapter.ts'
-export type { FetchLike } from './adapter.ts'
-export {
-  buildChatRequest,
-  CONTEXT_WINDOW,
-  DEFAULT_BASE_URL,
-  DEFAULT_MODEL,
-  DEFAULT_USER_AGENT,
-  flatten,
-  isContextLimitReason,
-  mapUsage,
-  parseStats,
-  projectHistory,
-  STATS_CLOSE,
-  STATS_OPEN,
-  StatsStreamFilter,
-} from './protocol.ts'
-export type { ChatJimmyConfig, ChatRequestBody, ChatStats, WireMessage } from './protocol.ts'

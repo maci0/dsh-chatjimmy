@@ -9,13 +9,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { ChatJimmyAdapter, CONTEXT_WINDOW_EXCEEDED_CODE, resolveConfig } from '../src/index.ts'
-import type { FetchLike } from '../src/index.ts'
+import { ChatJimmyAdapter, CONTEXT_WINDOW_EXCEEDED_CODE, type FetchLike } from '../src/adapter.ts'
+import { resolveConfig } from '../src/index.ts'
 import type { GenerateOptions, StreamChunk } from '../src/host.ts'
 
 const CONFIG = resolveConfig()
 const OPTIONS: GenerateOptions = {
-  provider: 'chatjimmy',
   model: 'llama3.1-8B',
   messages: [{ id: '1', role: 'user', content: [{ type: 'text', text: 'hi' }] }],
 }
@@ -39,7 +38,7 @@ async function collect(adapter: ChatJimmyAdapter): Promise<StreamChunk[]> {
 
 function adapterWith(response: Response | (() => Promise<Response>)): ChatJimmyAdapter {
   const impl: FetchLike = async () => (typeof response === 'function' ? response() : response)
-  return new ChatJimmyAdapter(() => CONFIG, impl)
+  return new ChatJimmyAdapter(CONFIG, impl)
 }
 
 test('streams text, splits the sentinel, and reports usage before finish', async () => {
@@ -79,6 +78,13 @@ test('a stats reason naming the context limit is surfaced as that failure', asyn
   assert.equal(only.reason.failure.code, CONTEXT_WINDOW_EXCEEDED_CODE)
 })
 
+test('a completed response with no content is an EMPTY_RESPONSE failure', async () => {
+  const chunks = await collect(adapterWith(streamResponse(['<|stats|>{"done":true}<|/stats|>'])))
+  const only = chunks[0] as { type: string; reason: { failure: { code: string } } }
+  assert.equal(only.type, 'finish')
+  assert.equal(only.reason.failure.code, 'EMPTY_RESPONSE')
+})
+
 test('a 400 error envelope becomes an INVALID_REQUEST failure', async () => {
   const response = new Response(JSON.stringify({ success: false, error: 'Selected model is required' }), {
     status: 400,
@@ -109,11 +115,13 @@ test('advertises one text-only model with the measured context window', async ()
   const prepared = await adapter.prepareCall('chatjimmy', 'llama3.1-8B')
   assert.equal(prepared.model.id, 'llama3.1-8B')
   assert.equal(adapter.providerInfo('chatjimmy').id, 'chatjimmy')
+  assert.equal(adapter.providerRetryPolicy('chatjimmy'), undefined)
+  assert.equal(adapter.imageRequestPricing('chatjimmy', 'llama3.1-8B'), undefined)
 })
 
 test('the wire request carries attribution and the documented body', async () => {
   let seen: { url: string; init: RequestInit } | undefined
-  const adapter = new ChatJimmyAdapter(() => CONFIG, async (url, init) => {
+  const adapter = new ChatJimmyAdapter(CONFIG, async (url, init) => {
     seen = { url, init }
     return streamResponse(['ok<|stats|>{}<|/stats|>'])
   })

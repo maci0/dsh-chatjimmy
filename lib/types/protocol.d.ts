@@ -13,12 +13,12 @@ export declare const STATS_OPEN = "<|stats|>";
 /** Closing marker of the trailing generation-stats block. */
 export declare const STATS_CLOSE = "<|/stats|>";
 /** One wire message chatjimmy accepts. */
-export interface WireMessage {
+interface WireMessage {
     role: 'user' | 'assistant';
     content: string;
 }
 /** The body `POST /api/chat` expects. */
-export interface ChatRequestBody {
+interface ChatRequestBody {
     messages: WireMessage[];
     chatOptions: {
         selectedModel: string;
@@ -96,3 +96,4 @@ export declare class StatsStreamFilter {
     /** Stats the stream carried, when the sentinel was complete. */
     get stats(): ChatStats | undefined;
 }
+export {};

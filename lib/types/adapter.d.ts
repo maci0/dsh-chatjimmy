@@ -11,11 +11,12 @@
  *
  * @module dsh-chatjimmy/adapter
  */
+import { CONTEXT_WINDOW_EXCEEDED_CODE } from '@deepseek-ai/dsh-llm';
 import type { ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm';
 import { type ChatJimmyConfig } from './protocol.ts';
 import type { GenerateOptions, LlmAdapterLike, LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo, PreparedAdapterCall, StreamChunk } from './host.ts';
 /** Stable failure used when the backend answers with a zero-byte stream body. */
-export declare const CONTEXT_WINDOW_EXCEEDED_CODE = "CONTEXT_WINDOW_EXCEEDED";
+export { CONTEXT_WINDOW_EXCEEDED_CODE };
 /** Injectable fetch, so the adapter is testable without a network. */
 export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 /**

@@ -16,13 +16,13 @@ export const STATS_OPEN = '<|stats|>'
 export const STATS_CLOSE = '<|/stats|>'
 
 /** One wire message chatjimmy accepts. */
-export interface WireMessage {
+interface WireMessage {
   role: 'user' | 'assistant'
   content: string
 }
 
 /** The body `POST /api/chat` expects. */
-export interface ChatRequestBody {
+interface ChatRequestBody {
   messages: WireMessage[]
   chatOptions: {
     selectedModel: string

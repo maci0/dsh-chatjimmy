@@ -20,7 +20,7 @@
  */
 
 /** Disposer returned by every host registration. */
-export type Disposable = () => void
+type Disposable = () => void
 
 /** Content block the harness may hand us in request history. */
 export type ContentBlock =
@@ -31,7 +31,7 @@ export type ContentBlock =
   | { readonly type: string; readonly [key: string]: unknown }
 
 /** One message in a fully-assembled request. */
-export interface Message {
+interface Message {
   readonly id: string
   readonly role: 'system' | 'user' | 'assistant'
   readonly content: readonly ContentBlock[]
@@ -129,7 +129,7 @@ export interface LlmAdapterLike {
 }
 
 /** The `ctx.llm` seam, narrowed to the one call this plugin makes. */
-export interface LlmServiceLike {
+interface LlmServiceLike {
   registerAdapter(providers: string[], adapter: LlmAdapterLike): Disposable
 }
 

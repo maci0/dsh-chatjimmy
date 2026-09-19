@@ -12,7 +12,7 @@
  * @module dsh-chatjimmy/adapter
  */
 
-import { attributionHeaders, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
+import { attributionHeaders, CONTEXT_WINDOW_EXCEEDED_CODE, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
 import type { ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
 import {
   buildChatRequest,
@@ -35,10 +35,19 @@ import type {
 } from './host.ts'
 
 /** Stable failure used when the backend answers with a zero-byte stream body. */
-export const CONTEXT_WINDOW_EXCEEDED_CODE = 'CONTEXT_WINDOW_EXCEEDED'
+export { CONTEXT_WINDOW_EXCEEDED_CODE }
 
-const CONFIGURED_MODEL_DESCRIPTION =
-  'Taalas-hosted Llama 3.1 8B served by chatjimmy.ai. Text only: no tool calls, no images, 6144-token total context.'
+/**
+ * Metadata every appearance of the configured model carries: the backend serves
+ * one model, so its wording and modalities live here rather than in two object
+ * literals.
+ */
+const CONFIGURED_MODEL = {
+  name: 'Llama 3.1 8B (Chat Jimmy)',
+  description: 'Taalas-hosted Llama 3.1 8B served by chatjimmy.ai.'
+    + ' Text only: no tool calls, no images, 6144-token total context.',
+  inputModalities: ['text'],
+} as const
 
 /** Injectable fetch, so the adapter is testable without a network. */
 export type FetchLike = (input: string, init: RequestInit) => Promise<Response>
@@ -177,13 +186,7 @@ export class ChatJimmyAdapter implements LlmAdapterLike {
    * picker open. The id stays advisory: any id is accepted on the wire.
    */
   listModels(provider: string): Promise<readonly LlmModelInfo[]> {
-    return Promise.resolve([{
-      provider,
-      id: this.#config.model,
-      name: 'Llama 3.1 8B (Chat Jimmy)',
-      description: CONFIGURED_MODEL_DESCRIPTION,
-      inputModalities: ['text'],
-    }])
+    return Promise.resolve([{ provider, id: this.#config.model, ...CONFIGURED_MODEL }])
   }
 
   /** {@inheritDoc LlmAdapterLike.resolveModel} */
@@ -191,9 +194,8 @@ export class ChatJimmyAdapter implements LlmAdapterLike {
     return Promise.resolve({
       provider,
       id: model,
-      name: model === this.#config.model ? 'Llama 3.1 8B (Chat Jimmy)' : model,
-      description: CONFIGURED_MODEL_DESCRIPTION,
-      inputModalities: ['text'],
+      ...CONFIGURED_MODEL,
+      name: model === this.#config.model ? CONFIGURED_MODEL.name : model,
       context: { contextWindow: this.#config.contextWindow },
     })
   }
@@ -232,12 +234,38 @@ export class ChatJimmyAdapter implements LlmAdapterLike {
       : AbortSignal.any([options.signal, consumer.signal])
     let idleTimedOut = false
     let idleTimer: NodeJS.Timeout | undefined
-    const armIdle = (): void => {
-      if (idleTimer !== undefined) clearTimeout(idleTimer)
-      idleTimer = setTimeout(() => {
+    /** True while the stream is expected to produce something. */
+    let idleWatching = false
+    let idleStartedAt = 0
+    const idleTimeoutMs = this.#config.streamIdleTimeoutMs
+    /**
+     * One timer wakes when the wait it covers would have outlived the bound and
+     * re-arms itself for the remainder otherwise, so a stream costs one timer
+     * instead of a `setTimeout`/`clearTimeout` pair per transport read.
+     */
+    const checkIdle = (): void => {
+      idleTimer = undefined
+      // Nothing outstanding: leave the timer unarmed; the next arm creates one.
+      if (!idleWatching) return
+      const elapsed = performance.now() - idleStartedAt
+      if (elapsed >= idleTimeoutMs) {
         idleTimedOut = true
         consumer.abort('chatjimmy: stream idle timeout')
-      }, this.#config.streamIdleTimeoutMs)
+        return
+      }
+      // The wake-up preceded the wait it covers: sleep the remainder.
+      idleTimer = setTimeout(checkIdle, idleTimeoutMs - elapsed)
+    }
+    const armIdle = (): void => {
+      idleWatching = true
+      idleStartedAt = performance.now()
+      idleTimer ??= setTimeout(checkIdle, idleTimeoutMs)
+    }
+    /** No read or chunk is outstanding any more: leave no timer behind. */
+    const disarmIdle = (): void => {
+      idleWatching = false
+      if (idleTimer !== undefined) clearTimeout(idleTimer)
+      idleTimer = undefined
     }
 
     const headers: Record<string, string> = {
@@ -270,7 +298,7 @@ export class ChatJimmyAdapter implements LlmAdapterLike {
       })
       return
     } finally {
-      if (idleTimer !== undefined) clearTimeout(idleTimer)
+      disarmIdle()
     }
 
     if (!response.ok) {
@@ -318,7 +346,7 @@ export class ChatJimmyAdapter implements LlmAdapterLike {
       })
       return
     } finally {
-      if (idleTimer !== undefined) clearTimeout(idleTimer)
+      disarmIdle()
     }
 
     const tail = filter.push(decoder.decode()) + filter.flush()

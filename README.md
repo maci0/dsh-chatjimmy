@@ -14,6 +14,12 @@ Install it for chat, session titles, and compaction. It is not an agent model.
 
 ## Install
 
+> **Install it as a bundle.** `dsh plugin add …` mounts the row from the
+> package's own patch layer, which is what the settings editor can write to. A
+> row added with `--patch` is an overlay: it disappears at the next start, and
+> the Plugins card cannot save into it — the editor refuses a write an overlay
+> would win.
+
 ```sh
 dsh plugin --profile web add github:maci0/dsh-chatjimmy
 dsh plugin --profile web update dsh-chatjimmy   # later, to pull main

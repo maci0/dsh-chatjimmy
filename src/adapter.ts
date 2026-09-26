@@ -144,16 +144,30 @@ function finishReasonFor(stats: ChatStats | undefined): FinishReason {
  * or adapter base class.
  */
 export class ChatJimmyAdapter implements LlmAdapterLike {
-  readonly #config: ChatJimmyConfig
+  readonly #options: () => ChatJimmyConfig
   readonly #fetch: FetchLike
 
   /**
-   * @param config - the resolved configuration this adapter serves.
+   * @param config - the resolved configuration this adapter serves, or a
+   * provider that resolves it on every read. The plugin passes the live
+   * provider, so a settings edit (the Plugins card, `/alias`-style patch
+   * writes) reaches the next request without remounting the adapter; a plain
+   * value keeps the snapshot behavior for direct callers and tests.
    * @param fetchImpl - transport override for tests.
    */
-  constructor(config: ChatJimmyConfig, fetchImpl: FetchLike = globalThis.fetch) {
-    this.#config = config
+  constructor(config: ChatJimmyConfig | (() => ChatJimmyConfig), fetchImpl: FetchLike = globalThis.fetch) {
+    this.#options = typeof config === 'function' ? config : () => config
     this.#fetch = fetchImpl
+  }
+
+  /**
+   * The configuration as it stands for this read. Resolving per access is what
+   * makes a live settings edit observable; `resolveConfig` is pure and cheap,
+   * and a read that cannot be resolved throws the same loud error the loader
+   * would have raised at mount.
+   */
+  get #config(): ChatJimmyConfig {
+    return this.#options()
   }
 
   /** {@inheritDoc LlmAdapterLike.providerInfo} */

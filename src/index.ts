@@ -12,6 +12,7 @@
  * @module dsh-chatjimmy
  */
 
+import type { Volatile } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import { RetryPolicySchema } from '@deepseek-ai/dsh-llm'
 import type { RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
@@ -29,35 +30,41 @@ export const PROVIDER = 'chatjimmy'
 export const inject = ['llm']
 
 /**
- * Configuration accepted from this plugin's row in a profile patch.
+ * Configuration this plugin's row resolves to, as `apply` receives it.
  *
- * The exported schema is what Cordis validates the row against and fills
- * defaults from; `resolveConfig` then normalizes the validated values.
+ * Every field a user may edit is `volatile()`, and the loader hands a volatile
+ * field a live reference rather than a value — the schema's own output type,
+ * `Volatile<T>`. Reading `.get()` at use time is what makes an edit from the
+ * Plugins card reach the next request without remounting the route.
  */
 export interface Config {
-  /** Deployment origin. Defaults to `https://chatjimmy.ai`. */
-  readonly baseUrl?: string
-  /** Model id sent as `chatOptions.selectedModel`. Defaults to `llama3.1-8B`. */
-  readonly model?: string
-  /** Forwarded as `chatOptions.topK`. The site's own client sends 8. */
-  readonly topK?: number
+  /** Deployment origin. Defaults to `https://chatjimmy.ai`. Volatile: editable from the Plugins card. */
+  readonly baseUrl: Volatile<string>
+  /** Model id sent as `chatOptions.selectedModel`. Defaults to `llama3.1-8B`. Volatile. */
+  readonly model: Volatile<string>
+  /** Forwarded as `chatOptions.topK`. The site's own client sends 8. Volatile. */
+  readonly topK: Volatile<number>
   /**
    * Total context window in tokens used for call-config validation. Measured
-   * against the live service at 6144 (prompt + completion).
+   * against the live service at 6144 (prompt + completion). Volatile.
    */
-  readonly contextWindow?: number
+  readonly contextWindow: Volatile<number>
   /**
    * Per-read stream idle watchdog in milliseconds; a stream that produces
-   * nothing for this long ends with the `TIMEOUT` failure.
+   * nothing for this long ends with the `TIMEOUT` failure. Volatile.
    */
-  readonly streamIdleTimeoutMs?: number
+  readonly streamIdleTimeoutMs: Volatile<number>
   /**
    * Provider-owned retry policy for this route, in the harness
    * `RetryPolicyConfig` shape (`{ mode: 'normal' | 'always', … }`). Absent
-   * leaves the harness's own normal defaults.
+   * leaves the harness's own normal defaults. Patch-only: a policy is an
+   * operator's decision, not a form field.
    */
   readonly retryPolicy?: RetryPolicyConfig
 }
+
+/** Raw row values, as a profile patch states them and as tests pass them. */
+export type Options = { [K in keyof Config]?: Config[K] extends Volatile<infer T> ? T : Config[K] }
 
 /**
  * Total context the backend enforces, in tokens, measured empirically:
@@ -79,13 +86,41 @@ const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300_000
 /** `setTimeout`'s maximum delay; a larger configured timeout is rejected at load. */
 const MAX_TIMER_DELAY_MS = 2_147_483_647
 
-/** Row schema: defaults live here, so a deployment only states what it changes. */
-export const Config: Schema<Config> = Schema.object({
+/**
+ * Field defaults and bounds with no volatility wrapper.
+ *
+ * {@link resolveConfig} parses a plain row through this schema, so its output
+ * is plain values; the loader-facing {@link Config} below is the same shape
+ * with every editable field made `volatile()`, which is what hands the plugin
+ * a live reference. The pair is asserted equal in the suite.
+ */
+const ValueSchema = Schema.object({
   baseUrl: Schema.string().default(DEFAULT_BASE_URL),
   model: Schema.string().default(DEFAULT_MODEL),
   topK: Schema.number().step(1).min(1).default(8),
   contextWindow: Schema.number().step(1).min(1).default(CONTEXT_WINDOW),
-  streamIdleTimeoutMs: Schema.number().min(Number.MIN_VALUE).max(MAX_TIMER_DELAY_MS).default(DEFAULT_STREAM_IDLE_TIMEOUT_MS),
+  streamIdleTimeoutMs: Schema.number().min(Number.MIN_VALUE).max(MAX_TIMER_DELAY_MS)
+    .default(DEFAULT_STREAM_IDLE_TIMEOUT_MS),
+  retryPolicy: RetryPolicySchema,
+})
+
+/**
+ * Row schema as Cordis resolves it: defaults live here, so a deployment only
+ * states what it changes.
+ *
+ * Every field a user may edit is `volatile()` — the settings document accepts
+ * only volatile paths, and the browser half's card edits exactly these. The
+ * adapter resolves the row per read, so an edit lands on the next request
+ * instead of waiting for a remount. `retryPolicy` stays ordinary
+ * configuration: patch-only, as its docs say.
+ */
+export const Config = Schema.object({
+  baseUrl: Schema.string().default(DEFAULT_BASE_URL).volatile(),
+  model: Schema.string().default(DEFAULT_MODEL).volatile(),
+  topK: Schema.number().step(1).min(1).default(8).volatile(),
+  contextWindow: Schema.number().step(1).min(1).default(CONTEXT_WINDOW).volatile(),
+  streamIdleTimeoutMs: Schema.number().min(Number.MIN_VALUE).max(MAX_TIMER_DELAY_MS)
+    .default(DEFAULT_STREAM_IDLE_TIMEOUT_MS).volatile(),
   retryPolicy: RetryPolicySchema,
 })
 
@@ -102,8 +137,8 @@ export const Config: Schema<Config> = Schema.object({
  * @param config - raw row configuration.
  * @returns the resolved adapter configuration.
  */
-export function resolveConfig(config: Config = {}): ChatJimmyConfig {
-  const resolved = Config(config) as ChatJimmyConfig
+export function resolveConfig(config: Options = {}): ChatJimmyConfig {
+  const resolved = ValueSchema(config) as ChatJimmyConfig
   const baseUrl = resolved.baseUrl.replace(/\/+$/, '')
   let parsed: URL
   try {
@@ -129,15 +164,60 @@ export function resolveConfig(config: Config = {}): ChatJimmyConfig {
 }
 
 /**
+ * Read the live row out of the references the loader resolved.
+ *
+ * Every editable field arrives as a `Volatile<T>`; this is the one place that
+ * turns them back into the plain values the schema and the adapter understand,
+ * so a caller cannot forget one.
+ *
+ * @param config - the resolved row.
+ * @returns plain row values, with absent references left undefined.
+ */
+export function liveOptions(config: Config): Options {
+  return {
+    baseUrl: config.baseUrl.get(),
+    model: config.model.get(),
+    topK: config.topK.get(),
+    contextWindow: config.contextWindow.get(),
+    streamIdleTimeoutMs: config.streamIdleTimeoutMs.get(),
+    retryPolicy: config.retryPolicy,
+  }
+}
+
+/**
  * Mount the adapter.
+ *
+ * The adapter is handed the resolver itself, not one resolved row: every
+ * configurable field is `volatile()`, so a settings write from the Plugins
+ * card changes what the next request uses without remounting the provider
+ * route (which would drop the model picker's selection). The row is resolved
+ * once here anyway, so an unusable one still fails at mount the way a
+ * non-volatile row would.
+ *
  * @param ctx - host context; `ctx.llm` must be mounted (`inject` guarantees it).
  * @param config - this plugin's row configuration.
  */
-export function apply(ctx: HostContext, config: Config = {}): void {
-  const resolved = resolveConfig(config)
-  ctx.llm.registerAdapter([PROVIDER], new ChatJimmyAdapter(resolved))
+export function apply(ctx: HostContext, config: Config): void {
+  const live = (): ChatJimmyConfig => resolveConfig(liveOptions(config))
+  const resolved = live()
+  ctx.llm.registerAdapter([PROVIDER], new ChatJimmyAdapter(live))
   ctx.logger.info(
     `chatjimmy: provider "${PROVIDER}" registered for model "${resolved.model}" at ${resolved.baseUrl}`
       + ` (text only, ${resolved.contextWindow}-token total context)`,
   )
+  // Report edits rather than swallowing them: a card write that made the row
+  // unusable has to be visible somewhere, and this is the only surface the
+  // host owns. The value stays on the row, so the request that needs it will
+  // raise the same error with the same message.
+  ctx.on('loader/volatile-update', () => {
+    try {
+      const next = live()
+      ctx.logger.info(
+        `chatjimmy: configuration updated — model "${next.model}" at ${next.baseUrl}`
+          + `, topK ${String(next.topK)}, ${next.contextWindow}-token context`,
+      )
+    } catch (error) {
+      ctx.logger.warn(`chatjimmy: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  })
 }

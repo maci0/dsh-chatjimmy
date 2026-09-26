@@ -157,6 +157,15 @@ export interface HostContext {
     readonly llm: LlmServiceLike;
     readonly logger: {
         info(message: unknown): void;
+        warn(message: unknown): void;
     };
+    /**
+     * Subscribe to a host event. This plugin watches `loader/volatile-update`,
+     * which is what a settings write emits once the live row references moved.
+     * @param event - the event name.
+     * @param listener - the callback.
+     * @returns the disposer that removes this listener.
+     */
+    on(event: 'loader/volatile-update', listener: () => void): Disposable;
 }
 export {};

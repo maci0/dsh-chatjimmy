@@ -31,10 +31,14 @@ export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 export declare class ChatJimmyAdapter implements LlmAdapterLike {
     #private;
     /**
-     * @param config - the resolved configuration this adapter serves.
+     * @param config - the resolved configuration this adapter serves, or a
+     * provider that resolves it on every read. The plugin passes the live
+     * provider, so a settings edit (the Plugins card, `/alias`-style patch
+     * writes) reaches the next request without remounting the adapter; a plain
+     * value keeps the snapshot behavior for direct callers and tests.
      * @param fetchImpl - transport override for tests.
      */
-    constructor(config: ChatJimmyConfig, fetchImpl?: FetchLike);
+    constructor(config: ChatJimmyConfig | (() => ChatJimmyConfig), fetchImpl?: FetchLike);
     /** {@inheritDoc LlmAdapterLike.providerInfo} */
     providerInfo(provider: string): LlmProviderInfo;
     /**

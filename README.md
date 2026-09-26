@@ -23,7 +23,11 @@ Then restart `dsh web`. Adding or updating the package changes a bundle layer, a
 
 ## Configure
 
-The defaults work with no row at all. To pin a value, override the row by id in `~/.dsh/profiles/web/cordis.patch.yml`:
+The defaults work with no row at all. Two surfaces write the same row: the **ChatJimmy** card on the Web client's **Plugins** page (its row's **Configure** control), and the profile patch.
+
+In the client, open **Plugins** → the **chatjimmy** row → **Configure**. Every field below except `retryPolicy` is editable there; the card validates what it can see (an absolute http(s) URL, a non-empty model, positive whole numbers) and saves all changed fields in one write. A save lands on the next request: the adapter reads the row per read, so no remount and no dropped model selection.
+
+To pin a value by hand instead, override the row by id in `~/.dsh/profiles/web/cordis.patch.yml`:
 
 ```yaml
 - id: chatjimmy
@@ -34,16 +38,16 @@ The defaults work with no row at all. To pin a value, override the row by id in 
 
 A patch replaces the targeted row's whole `config`, so restate every key you keep. This file is live-watched: saving it remounts the plugin, no restart needed.
 
-| Key | Default | Meaning |
-|---|---|---|
-| `baseUrl` | `https://chatjimmy.ai` | Deployment origin. Must be an absolute http(s) URL; trailing slashes are trimmed. |
-| `model` | `llama3.1-8B` | Sent as `chatOptions.selectedModel`. `/api/models` advertises exactly this id; any id is accepted on the wire. |
-| `topK` | `8` | Forwarded as `chatOptions.topK`. Must be a positive integer. |
-| `contextWindow` | `6144` | Capacity reported to the harness. Change only if the backend does. |
-| `streamIdleTimeoutMs` | `300000` | Bound on the gap between two stream reads. A stream this silent ends with `TIMEOUT`. |
-| `retryPolicy` | *(absent)* | Provider-owned retry policy in the harness `RetryPolicyConfig` shape, e.g. `{ mode: normal, maxRetries: 2 }`. Absent keeps the harness defaults. |
+| Key | Default | Editable in the UI | Meaning |
+|---|---|---|---|
+| `baseUrl` | `https://chatjimmy.ai` | yes | Deployment origin. Must be an absolute http(s) URL; trailing slashes are trimmed. |
+| `model` | `llama3.1-8B` | yes | Sent as `chatOptions.selectedModel`. `/api/models` advertises exactly this id; any id is accepted on the wire. |
+| `topK` | `8` | yes | Forwarded as `chatOptions.topK`. Must be a positive integer. |
+| `contextWindow` | `6144` | yes | Capacity reported to the harness. Change only if the backend does. |
+| `streamIdleTimeoutMs` | `300000` | yes | Bound on the gap between two stream reads. A stream this silent ends with `TIMEOUT`. |
+| `retryPolicy` | *(absent)* | no | Provider-owned retry policy in the harness `RetryPolicyConfig` shape, e.g. `{ mode: normal, maxRetries: 2 }`. Absent keeps the harness defaults. Patch-only: a policy is an operator's decision. |
 
-An invalid row throws at load rather than being silently defaulted: a typo'd `baseUrl` should not surface later as an opaque transport failure.
+An invalid row throws at load rather than being silently defaulted: a typo'd `baseUrl` should not surface later as an opaque transport failure. The same check runs on every live read, so an edit that makes the row unusable is reported in the host log by the row's `loader/volatile-update` listener.
 
 Do not also insert this row by hand while the package is a bundle in `dsh.profile.bundles`: `insert` does not dedupe ids, and two rows mount the plugin twice.
 

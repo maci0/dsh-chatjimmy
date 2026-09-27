@@ -28,12 +28,14 @@ import type { GenerateOptions } from '../src/host.ts'
 const DELTAS = 8000
 
 /**
- * Median CPU milliseconds this workload cost on the recorded host, and the
- * tolerance multiplier. Baseline: AMD Ryzen 9 9950X, node v26.9.0, pinned to
- * one core (`taskset -c 2`). The constant is the median observed under
- * `node --test`, which roughly doubles the number a bare script reports.
+ * Median CPU milliseconds this workload costs on the slowest host it runs on,
+ * and the tolerance multiplier. Measured under `node --test`: 2.2-3.0ms on the
+ * recording host (AMD Ryzen 9 9950X, node v26.9.0, one core) and 4.6-6.9ms on
+ * `ubuntu-latest` runners, so the constant is the slowest runner rounded up.
+ * The band is a gate for an algorithmic regression — a per-record regex, an
+ * O(n²) rebuild of the record buffer, a timer per read — not a micro-benchmark.
  */
-const BASELINE_CPU_MS = 1
+const BASELINE_CPU_MS = 8
 const TOLERANCE = 4
 
 const CONFIG = {

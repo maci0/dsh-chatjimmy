@@ -84,7 +84,7 @@ The answer streams in as plain text. Nothing else is needed — no key, no setti
 
 ## How it works
 
-- **Attribution.** Every request carries `attributionHeaders()` from `@deepseek-ai/dsh-llm`, so `User-Agent` cannot drift from the installed harness. That package's pure helpers (`attributionHeaders()`, `resolveRetryPolicy()`) are the plugin's only runtime dependency on `@deepseek-ai/*`; the adapter is duck-typed, not an `LlmAdapter` subclass.
+- **Attribution.** Every request carries `attributionHeaders()` from `@deepseek-ai/dsh-llm`, so `User-Agent` cannot drift from the installed harness. That package's pure helpers (`attributionHeaders()`, `resolveRetryPolicy()`) are the plugin's only runtime dependency on `@deepseek-ai/dsh-llm`; `@deepseek-ai/schemastery` supplies the row schema, and the adapter is duck-typed, not an `LlmAdapter` subclass.
 - **Request.** `POST {baseUrl}/api/chat` with the history flattened to text, every system- or developer-role message hoisted into the single `systemPrompt` slot, tool results projected onto user turns (the wire has no tool role), `attachment: null`.
 - **Streaming.** The stats filter holds back text only as far as a marker could still be forming, so time-to-first-token is unaffected. Usage is emitted only when the provider reported counters; a synthesized zero would claim a measurement that never happened.
 - **Failures.** HTTP 400/422 → `INVALID_REQUEST`, 401/403 → `AUTH`, 429 → `RATE_LIMIT`, 5xx → `SERVER`, anything else → `TRANSPORT`. A zero-byte HTTP 200 is the service's overflow signature, because the response headers are already committed as `text/event-stream` — that becomes `CONTEXT_WINDOW_EXCEEDED`, not an empty answer.

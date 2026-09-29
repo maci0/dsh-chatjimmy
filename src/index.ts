@@ -149,6 +149,15 @@ export function resolveConfig(config: Options = {}): ChatJimmyConfig {
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
     throw new Error(`chatjimmy: baseUrl "${resolved.baseUrl}" must use http or https`)
   }
+  // The adapter appends `/api/chat` to this root. Credentials make `fetch`
+  // refuse the URL (and hide the real host behind a look-alike userinfo), and a
+  // query or fragment swallows the appended path, so no such URL can ever
+  // address the documented endpoint. Same rule as the harness's own providers.
+  if (parsed.username.length > 0 || parsed.password.length > 0 || parsed.search.length > 0 || parsed.hash.length > 0) {
+    throw new Error(
+      `chatjimmy: baseUrl "${resolved.baseUrl}" must be an HTTP(S) root without credentials, query, or fragment`,
+    )
+  }
   // Any string is a valid model id to the schema, but the empty one is not a model.
   if (resolved.model.trim().length === 0) throw new Error('chatjimmy: model must be a non-empty string')
 

@@ -270,8 +270,17 @@ test('the card refuses a base URL the host resolver would reject', async () => {
   client.apply()
 
   // `new URL` rejects these, so the plugin's own resolveConfig throws on every
-  // read; the card must not write a row that bricks the route.
-  for (const invalid of ['https://', 'https://exa mple.com']) {
+  // read; the card must not write a row that bricks the route. The same holds
+  // for a URL the resolver accepts but cannot use as a request root: with
+  // credentials `fetch` refuses it, a query or fragment swallows `/api/chat`.
+  for (const invalid of [
+    'https://',
+    'https://exa mple.com',
+    'https://user:pass@chatjimmy.ai',
+    'https://chatjimmy.ai@evil.test',
+    'https://chatjimmy.ai?debug=1',
+    'https://chatjimmy.ai#frag',
+  ]) {
     const tree = setField(client, 'labelBaseUrl', invalid)
     findAll(tree, 'button').find((button) => textOf(button) === 'save')?.props.onClick()
     await client.flush()

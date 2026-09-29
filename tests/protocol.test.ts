@@ -107,6 +107,31 @@ test('config rejects an unusable row instead of defaulting it', () => {
   assert.equal(resolveConfig({ retryPolicy: { mode: 'always' } }).retryPolicy?.mode, 'always')
 })
 
+test('a base URL that cannot serve as a request root is rejected', () => {
+  // The adapter appends `/api/chat` to the configured root. Credentials make
+  // `fetch` refuse the URL outright (and hide the real host behind a
+  // look-alike userinfo), while a query or fragment swallows the appended
+  // path, so neither can ever address the documented endpoint.
+  assert.throws(
+    () => resolveConfig({ baseUrl: 'https://chatjimmy.ai@evil.test' }),
+    /without credentials, query, or fragment/,
+  )
+  assert.throws(
+    () => resolveConfig({ baseUrl: 'https://user:pass@chatjimmy.ai' }),
+    /without credentials, query, or fragment/,
+  )
+  assert.throws(
+    () => resolveConfig({ baseUrl: 'https://chatjimmy.ai?debug=1' }),
+    /without credentials, query, or fragment/,
+  )
+  assert.throws(
+    () => resolveConfig({ baseUrl: 'https://chatjimmy.ai#frag' }),
+    /without credentials, query, or fragment/,
+  )
+  // A base path stays legal: a self-hosted deployment may mount the API lower.
+  assert.equal(resolveConfig({ baseUrl: 'https://chatjimmy.ai/base/' }).baseUrl, 'https://chatjimmy.ai/base')
+})
+
 test('splitter emits completion text and never leaks the sentinel', () => {
   const filter = new StatsStreamFilter()
   const chunks = ['Hel', 'lo ', 'wor', 'ld\n', STATS_OPEN, '{"prefill_tokens":18,"decode_tokens":2,"total_tokens":20}', STATS_CLOSE]

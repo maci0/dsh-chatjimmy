@@ -69,6 +69,25 @@ test('renders tool blocks as prose because the service has no tool protocol', ()
   assert.equal(text, 'a[tool call] read({"path":"x"})[tool result] ok')
 })
 
+test('a cross-provider tool history stays inside the user/assistant wire roles', () => {
+  // The harness history carries `tool` and `developer` role messages; the
+  // documented wire contract accepts neither (API.md: standard user/assistant
+  // history), so both must be projected before the body is serialized.
+  const history: GenerateOptions = {
+    model: 'llama3.1-8B',
+    messages: [
+      { id: '1', role: 'user', content: [{ type: 'text', text: 'read x' }] },
+      { id: '2', role: 'assistant', content: [{ type: 'tool-call', id: 'c1', name: 'read', arguments: '{"path":"x"}' }] },
+      { id: '3', role: 'tool', toolCallId: 'c1', content: [{ type: 'tool-result', toolCallId: 'c1', content: [{ type: 'text', text: 'ok' }] }] },
+      { id: '4', role: 'developer', content: [{ type: 'text', text: 'be terse' }] },
+    ],
+  }
+  const body = buildChatRequest(history, CONFIG)
+  assert.deepEqual(body.messages.map(message => message.role), ['user', 'assistant', 'user'])
+  assert.equal(body.messages[2]?.content, '[tool result] ok')
+  assert.equal(body.chatOptions.systemPrompt, 'be terse')
+})
+
 test('an empty model id falls back to the configured one', () => {
   assert.equal(buildChatRequest(request({ model: '' }), CONFIG).chatOptions.selectedModel, 'llama3.1-8B')
 })
@@ -114,6 +133,15 @@ test('splitter releases residual text when no sentinel ever arrives', () => {
   const out = filter.push('partial answer') + filter.flush()
   assert.equal(out, 'partial answer')
   assert.equal(filter.stats, undefined)
+})
+
+test('splitter never releases a stats block the stream cut short', () => {
+  // A full opening marker was seen, so nothing left in the buffer is
+  // completion text; releasing it would print the sentinel and raw stats JSON
+  // into the answer.
+  const filter = new StatsStreamFilter()
+  const out = filter.push('answer<|stats|>{"prefill_tokens":18') + filter.flush()
+  assert.equal(out, 'answer')
 })
 
 test('splitter ignores everything after the sentinel', () => {

@@ -33,8 +33,16 @@ export type ContentBlock =
 /** One message in a fully-assembled request. */
 interface Message {
   readonly id: string
-  readonly role: 'system' | 'user' | 'assistant'
+  /**
+   * Every role the harness really sends. Narrowing this to the three the wire
+   * accepts is what let `tool` and `developer` turns reach the service
+   * verbatim, so the union stays complete and `buildChatRequest` does the
+   * projection the wire needs.
+   */
+  readonly role: 'system' | 'developer' | 'user' | 'assistant' | 'tool'
   readonly content: readonly ContentBlock[]
+  /** Id of the call a `tool`-role message answers. */
+  readonly toolCallId?: string
 }
 
 /** A single model request, narrowed to the fields this adapter reads. */

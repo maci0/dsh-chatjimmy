@@ -265,6 +265,32 @@ test('the card refuses what it can see before the write', async () => {
   assert.deepEqual(client.mutations, [])
 })
 
+test('the card refuses a base URL the host resolver would reject', async () => {
+  const client = createClient()
+  client.apply()
+
+  // `new URL` rejects these, so the plugin's own resolveConfig throws on every
+  // read; the card must not write a row that bricks the route.
+  for (const invalid of ['https://', 'https://exa mple.com']) {
+    const tree = setField(client, 'labelBaseUrl', invalid)
+    findAll(tree, 'button').find((button) => textOf(button) === 'save')?.props.onClick()
+    await client.flush()
+    assert.match(textOf(client.render({ view: 'page' })), /baseUrlInvalid/)
+  }
+  assert.deepEqual(client.mutations, [])
+})
+
+test('a reset the Host refuses is reported as refused', async () => {
+  const client = createClient({ acceptWrites: false, user: { model: 'llama3.1-70B' } })
+  client.apply()
+  const tree = client.render({ view: 'page' })
+
+  findAll(tree, 'button').find((button) => textOf(button) === 'reset')?.props.onClick()
+  await client.flush()
+  assert.match(textOf(client.render({ view: 'page' })), /rejected/)
+  assert.equal(client.mutations.length, 1)
+})
+
 test('an overridden row offers a reset that clears exactly the user layer', async () => {
   const client = createClient({ user: { model: 'llama3.1-70B', retryPolicy: { mode: 'always' } } })
   client.apply()

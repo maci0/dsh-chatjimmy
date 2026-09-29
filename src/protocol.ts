@@ -91,11 +91,15 @@ export function buildChatRequest(options: GenerateOptions, config: ChatJimmyConf
   const messages: WireMessage[] = []
   for (const message of options.messages) {
     const text = flatten(message.content)
-    if (message.role === 'system') {
+    if (message.role === 'system' || message.role === 'developer') {
       if (text.length > 0) systemParts.push(text)
       continue
     }
-    if (text.length > 0) messages.push({ role: message.role, content: text })
+    if (text.length === 0) continue
+    // The wire accepts user/assistant turns only, so a tool result rides the
+    // user turn — the same projection the harness's own adapters use for a
+    // provider with no tool role.
+    messages.push({ role: message.role === 'tool' ? 'user' : message.role, content: text })
   }
   if (options.system !== undefined && options.system.length > 0) systemParts.unshift(options.system)
   return {
@@ -189,6 +193,12 @@ export class StatsStreamFilter {
    */
   flush(): string {
     if (this.#closed || this.#buffer.length === 0) return ''
+    // A full opening marker was seen, so nothing still buffered is completion
+    // text: a block the body cut short must not be printed as the answer.
+    if (this.#buffer.startsWith(STATS_OPEN)) {
+      this.#buffer = ''
+      return ''
+    }
     const emit = this.#buffer
     this.#buffer = ''
     return emit

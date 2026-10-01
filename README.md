@@ -1,13 +1,13 @@
 # dsh-chatjimmy
 
-A `llama3.1-8B` route inside DeepSeek Harness, served by [chatjimmy.ai](https://chatjimmy.ai/) — no API key and no account, because the endpoint is public.
+A `llama3.1-8B` route inside DeepSeek Harness, served by [chatjimmy.ai](https://chatjimmy.ai/). No API key and no account: the endpoint is public.
 What you get is not the model. It is the accounting: the harness learns the service's real 6144-token ceiling, so a long session compacts instead of losing the turn to a zero-byte 200.
 Install it for chat, session titles, and compaction. It is not an agent model.
 
 ## What you get
 
 - A `chatjimmy` provider route in the Web model picker, advertising `llama3.1-8B`.
-- A reported 6144-token context window — prompt **and** completion — measured against the live service.
+- A reported 6144-token context window (prompt **and** completion), measured against the live service.
 - Streaming replies with the trailing `<|stats|>…<|/stats|>` block stripped and reported as harness usage.
 - Failure codes the harness can act on: overflow is `CONTEXT_WINDOW_EXCEEDED`, a stalled stream is `TIMEOUT`, a refused `stop` list is `UNSUPPORTED_OPTION`, caller cancellation is `aborted`.
 - No credential record to create. The endpoint is public and unauthenticated.
@@ -17,15 +17,14 @@ Install it for chat, session titles, and compaction. It is not an agent model.
 > **Install it as a bundle.** `dsh plugin add …` mounts the row from the
 > package's own patch layer, which is what the settings editor can write to. A
 > row added with `--patch` is an overlay: it disappears at the next start, and
-> the Plugins card cannot save into it — the editor refuses a write an overlay
-> would win.
+> the Plugins card cannot save into it (the editor refuses a write an overlay
+> would win).
 
 ```sh
-dsh plugin --profile web add github:maci0/dsh-chatjimmy
-dsh plugin --profile web update dsh-chatjimmy   # later, to pull main
+dsh plugin --profile web add github:maci0/dsh-chatjimmy#v0.8.0
 ```
 
-Then restart `dsh web`. Adding or updating the package changes a bundle layer, and bundle layers compose at boot.
+Pin a release tag: a bare `github:` spec floats on `main`. To upgrade, run the same command with the newer tag, then restart `dsh web` (bundle layers compose at boot).
 
 ## Configure
 
@@ -65,9 +64,9 @@ One route, one advertised model.
 |---|---|---|
 | `chatjimmy` | Chat Jimmy (Taalas) | `llama3.1-8B` |
 
-The id is advisory — the service mirrors whatever `model` you configured in `listModels()` and accepts any string at request time. This route declares no reasoning efforts, so the picker shows no Effort menu for it.
+The id is advisory: the adapter mirrors whatever `model` you configured in `listModels()` and accepts any string at request time. This route declares no reasoning efforts, so the picker shows no Effort menu for it.
 
-The 6144-token limit is measured, not read from a header. The backend reports `prefill_tokens` per request, which makes the ceiling observable: 6141 prefill + 2 output tokens answered in full, while a request needing 6143 + 2 returned a zero-byte body. The site's own client caps at the same number (`NEXT_PUBLIC_TOKEN_LIMIT`, default 6144). Because the limit is on prompt **plus** completion, an oversized prompt fails only when the model would have generated enough to cross it — which is why the same prompt succeeds or fails at random.
+The 6144-token limit is measured, not read from a header. The backend reports `prefill_tokens` per request, which makes the ceiling observable: 6141 prefill + 2 output tokens answered in full, while a request needing 6143 + 2 returned a zero-byte body. The site's own client caps at the same number (`NEXT_PUBLIC_TOKEN_LIMIT`, default 6144). Because the limit is on prompt **plus** completion, an oversized prompt fails only when the model would have generated enough to cross it, which is why the same prompt succeeds or fails at random.
 
 ## Try it
 
@@ -80,27 +79,27 @@ The 6144-token limit is measured, not read from a header. The backend reports `p
 Suggest four names for a CLI that renames photos.
 ```
 
-The answer streams in as plain text. Nothing else is needed — no key, no settings page visit.
+The answer streams in as plain text. Nothing else is needed: no key, no settings page visit.
 
 ## How it works
 
 - **Attribution.** Every request carries `attributionHeaders()` from `@deepseek-ai/dsh-llm`, so `User-Agent` cannot drift from the installed harness. That package's pure helpers (`attributionHeaders()`, `resolveRetryPolicy()`) are the plugin's only runtime dependency on `@deepseek-ai/dsh-llm`; `@deepseek-ai/schemastery` supplies the row schema, and the adapter is duck-typed, not an `LlmAdapter` subclass.
-- **Request.** `POST {baseUrl}/api/chat` with the history flattened to text, every system- or developer-role message hoisted into the single `systemPrompt` slot, tool results projected onto user turns (the wire has no tool role), `attachment: null`.
+- **Request.** `POST {baseUrl}/api/chat` with the history flattened to text, every system- or developer-role message hoisted into the single `systemPrompt` slot, tool results projected onto user turns labelled `[tool result]` (the wire has no tool role), `attachment: null`.
 - **Streaming.** The stats filter holds back text only as far as a marker could still be forming, so time-to-first-token is unaffected. Usage is emitted only when the provider reported counters; a synthesized zero would claim a measurement that never happened.
-- **Failures.** HTTP 400/422 → `INVALID_REQUEST`, 401/403 → `AUTH`, 429 → `RATE_LIMIT`, 5xx → `SERVER`, anything else → `TRANSPORT`. A zero-byte HTTP 200 is the service's overflow signature, because the response headers are already committed as `text/event-stream` — that becomes `CONTEXT_WINDOW_EXCEEDED`, not an empty answer.
+- **Failures.** HTTP 400/422 → `INVALID_REQUEST`, 401/403 → `AUTH`, 429 → `RATE_LIMIT`, 5xx → `SERVER`, anything else → `TRANSPORT`. A zero-byte HTTP 200 is the service's overflow signature, because the response headers are already committed as `text/event-stream`. That becomes `CONTEXT_WINDOW_EXCEEDED`, not an empty answer.
 - **Stateless.** The service keeps no history, so the harness sends the full conversation every turn.
 
-The wire contract this adapter implements — `GET /api/health`, `GET /api/models`, `POST /api/chat` — is documented in [`API.md`](API.md). It was reconstructed from the JavaScript the site serves to any visitor plus ordinary requests: no authentication was bypassed and no private endpoint was reached.
+The wire contract this adapter implements (`GET /api/health`, `GET /api/models`, `POST /api/chat`) is documented in [`API.md`](API.md). It was reconstructed from the JavaScript the site serves to any visitor plus ordinary requests: no authentication was bypassed and no private endpoint was reached.
 
 ## Limits
 
 This is a text-only route. It is not an agent model.
 
-The API accepts no `tools` field, so the adapter ignores `options.tools` rather than pretending otherwise: the model will never emit a tool call. A cross-provider history that contains tool blocks is rendered as prose (`[tool call] name(args)`) so the conversation still reads as one.
+The API accepts no `tools` field, so the adapter ignores `options.tools` rather than pretending otherwise: the model will never emit a tool call. A cross-provider history that contains tool calls and results is rendered as prose (`[tool call] name(args)`, `[tool result] output`) so the conversation still reads as one.
 
 - **6144 tokens total**, prompt and completion together.
 - **No images or files.** `inputModalities: ['text']` makes `LlmRuntime` project them to placeholder text before dispatch.
-- **No sampling controls.** `temperature` and `maxTokens` are dropped — the API has no field for them. `stop` is refused with `UNSUPPORTED_OPTION` instead, because dropping it would change generation semantics. `topK` is the one knob it accepts.
+- **No sampling controls.** `temperature` and `maxTokens` are dropped: the API has no field for them. `stop` is refused with `UNSUPPORTED_OPTION` instead, because dropping it would change generation semantics. `topK` is the one knob it accepts.
 - **No server-side history.** The harness resends everything each turn.
 - **Prompts leave your machine** and go to a third-party service (Taalas Inc., per the site's own links).
 - **Small model.** An 8B model is a fine chat, title, and compaction route; expect weak long-form reasoning.
@@ -108,12 +107,12 @@ The API accepts no `tools` field, so the adapter ignores `options.tools` rather 
 ## Development
 
 ```sh
-npm test           # node --test tests/*.test.ts — hermetic, stubbed transport, no network
+npm test           # node --test tests/*.test.ts: hermetic, stubbed transport, no network
 npm run build      # tsc -p tsconfig.build.json → lib/index.js + lib/types/
 npm run typecheck  # tsc -p tsconfig.json
 ```
 
-The package ships the built `lib/` and declares `dsh.bundle`, so a change to `src/` needs `npm run build` before it takes effect.
+The package ships the built `lib/` and declares `dsh.bundle`, so a change to `src/` needs `npm run build` before it takes effect. For local development, run `npm run build`, then `dsh plugin --profile <name> add <path-to-checkout>`.
 
 Coverage: the wire-body projection and the stats splitter, including every single-character split point of the sentinel; the stream contract and both failure signatures over a stubbed fetch; and a real Cordis `Context` mount proving the route is registered and withdrawn with the fiber.
 

@@ -21,7 +21,7 @@ Install it for chat, session titles, and compaction. It is not an agent model.
 > would win).
 
 ```sh
-dsh plugin --profile web add github:maci0/dsh-chatjimmy#v0.11.2
+dsh plugin --profile web add github:maci0/dsh-chatjimmy#v0.11.3
 ```
 
 Pin a release tag: a bare `github:` spec floats on `main`. To upgrade, run the same command with the newer tag, then restart `dsh web` (bundle layers compose at boot).
@@ -49,7 +49,7 @@ A patch replaces the targeted row's whole `config`, so restate every key you kee
 | `model` | `llama3.1-8B` | yes | Sent as `chatOptions.selectedModel`. `/api/models` advertises exactly this id; any id is accepted on the wire. |
 | `topK` | `8` | yes | Forwarded as `chatOptions.topK`. Must be a positive integer. |
 | `contextWindow` | `6144` | yes | Capacity reported to the harness. Change only if the backend does. |
-| `streamIdleTimeoutMs` | `300000` | yes | Bound on the gap between two stream reads. A stream this silent ends with `TIMEOUT`. |
+| `streamIdleTimeoutMs` | `300000` | yes | Bound on a provider read, including HTTP error bodies. A stalled read ends with `TIMEOUT`; consumer backpressure does not consume the bound. |
 | `retryPolicy` | *(absent)* | no | Provider-owned retry policy in the harness `RetryPolicyConfig` shape, e.g. `{ mode: normal, maxRetries: 2 }`. Absent keeps the harness defaults. Patch-only: a policy is an operator's decision. |
 
 An invalid row throws at load rather than being silently defaulted: a typo'd `baseUrl` should not surface later as an opaque transport failure. The same check runs on every live read, so an edit that makes the row unusable is reported in the host log by the row's `loader/volatile-update` listener.

@@ -240,6 +240,7 @@ export class ChatJimmyAdapter implements LlmAdapterLike {
    * `CONTEXT_WINDOW_EXCEEDED` rather than as an empty completion.
    */
   async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+    const config = this.#config
     const unsupported = unsupportedOptionFailure(options)
     if (unsupported !== undefined) {
       yield errorFinish(unsupported)
@@ -248,7 +249,7 @@ export class ChatJimmyAdapter implements LlmAdapterLike {
     // The backend answers an empty `messages` list with HTTP 500, which the
     // harness would retry as SERVER; the same request can never succeed, so it
     // is refused here with a code the default retry policy leaves alone.
-    const body = buildChatRequest(options, this.#config)
+    const body = buildChatRequest(options, config)
     if (body.messages.length === 0) {
       yield errorFinish({
         message: 'chatjimmy: the request has no message text to send (the service needs at least one user or assistant turn)',
@@ -268,7 +269,7 @@ export class ChatJimmyAdapter implements LlmAdapterLike {
     /** True while the stream is expected to produce something. */
     let idleWatching = false
     let idleStartedAt = 0
-    const idleTimeoutMs = this.#config.streamIdleTimeoutMs
+    const idleTimeoutMs = config.streamIdleTimeoutMs
     /**
      * One timer wakes when the wait it covers would have outlived the bound and
      * re-arms itself for the remainder otherwise, so a stream costs one timer
@@ -292,6 +293,8 @@ export class ChatJimmyAdapter implements LlmAdapterLike {
       idleStartedAt = performance.now()
       idleTimer ??= setTimeout(checkIdle, idleTimeoutMs)
     }
+    /** The read resolved; consumer processing and backpressure are not provider idle time. */
+    const clearIdle = (): void => { idleWatching = false }
     /** No read or chunk is outstanding any more: leave no timer behind. */
     const disarmIdle = (): void => {
       idleWatching = false
@@ -308,7 +311,7 @@ export class ChatJimmyAdapter implements LlmAdapterLike {
     let response: Response
     armIdle()
     try {
-      response = await this.#fetch(`${this.#config.baseUrl}/api/chat`, {
+      response = await this.#fetch(`${config.baseUrl}/api/chat`, {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
@@ -316,7 +319,7 @@ export class ChatJimmyAdapter implements LlmAdapterLike {
       })
     } catch (error) {
       if (idleTimedOut) {
-        yield errorFinish(idleTimeoutFailure(this.#config.streamIdleTimeoutMs))
+        yield errorFinish(idleTimeoutFailure(idleTimeoutMs))
         return
       }
       if (options.signal?.aborted === true) {
@@ -333,7 +336,16 @@ export class ChatJimmyAdapter implements LlmAdapterLike {
     }
 
     if (!response.ok) {
-      yield errorFinish(failureForStatus(response.status, await errorDetail(response), response.headers))
+      let detail: string
+      armIdle()
+      try {
+        detail = await errorDetail(response)
+      } finally {
+        disarmIdle()
+      }
+      yield idleTimedOut ? errorFinish(idleTimeoutFailure(idleTimeoutMs))
+        : options.signal?.aborted === true ? abortFinish()
+          : errorFinish(failureForStatus(response.status, detail, response.headers))
       return
     }
     if (response.body === null) {
@@ -352,19 +364,21 @@ export class ChatJimmyAdapter implements LlmAdapterLike {
     try {
       armIdle()
       for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
-        armIdle()
+        clearIdle()
         const text = filter.push(decoder.decode(chunk, { stream: true }))
-        if (text.length === 0) continue
-        if (!open) {
-          yield { type: 'block-start', index, blockType: 'text' }
-          open = true
+        if (text.length > 0) {
+          if (!open) {
+            yield { type: 'block-start', index, blockType: 'text' }
+            open = true
+          }
+          assembled += text
+          yield { type: 'text-delta', index, text }
         }
-        assembled += text
-        yield { type: 'text-delta', index, text }
+        armIdle()
       }
     } catch (error) {
       if (idleTimedOut) {
-        yield errorFinish(idleTimeoutFailure(this.#config.streamIdleTimeoutMs))
+        yield errorFinish(idleTimeoutFailure(idleTimeoutMs))
         return
       }
       if (options.signal?.aborted === true) {
@@ -392,7 +406,7 @@ export class ChatJimmyAdapter implements LlmAdapterLike {
 
     const stats = filter.stats
     if (!open) {
-      yield emptyStreamFinish(stats, this.#config.contextWindow)
+      yield emptyStreamFinish(stats, config.contextWindow)
       return
     }
     yield { type: 'block-end', index, block: { type: 'text', text: assembled } }

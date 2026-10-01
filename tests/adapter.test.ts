@@ -151,7 +151,9 @@ test('a caller abort ends as aborted, not as a provider error', async () => {
 })
 
 test('a stalled stream ends with TIMEOUT at the configured idle bound', async () => {
-  const adapter = new ChatJimmyAdapter({ ...CONFIG, streamIdleTimeoutMs: 20 }, async (_url, init) => {
+  let config = { ...CONFIG, streamIdleTimeoutMs: 20 }
+  const adapter = new ChatJimmyAdapter(() => config, async (_url, init) => {
+    config = { ...config, streamIdleTimeoutMs: 500 }
     const signal = init.signal
     return new Response(new ReadableStream<Uint8Array>({
       start(controller) {
@@ -164,6 +166,42 @@ test('a stalled stream ends with TIMEOUT at the configured idle bound', async ()
   assert.equal(only.reason.kind, 'error')
   assert.equal(only.reason.failure.code, 'TIMEOUT')
   assert.match(only.reason.failure.message, /20ms/)
+})
+
+test('HTTP error bodies obey the idle bound and preserve caller cancellation', async () => {
+  for (const [idleMs, cancelMs, kind, code] of [[20, 150, 'error', 'TIMEOUT'], [150, 20, 'aborted', 'ABORTED']] as const) {
+    const adapter = new ChatJimmyAdapter({ ...CONFIG, streamIdleTimeoutMs: idleMs }, async (_url, init) => new Response(new ReadableStream({
+      start(controller) {
+        init.signal?.addEventListener('abort', () => controller.error(new Error('read aborted')), { once: true })
+      },
+    }), { status: 429 }))
+    const chunks: StreamChunk[] = []
+    for await (const chunk of adapter.stream({ ...OPTIONS, signal: AbortSignal.timeout(cancelMs) })) chunks.push(chunk)
+    assert.equal(chunks.length, 1)
+    const finish = chunks[0]
+    assert.ok(finish?.type === 'finish' && (finish.reason.kind === 'error' || finish.reason.kind === 'aborted'))
+    assert.equal(finish.reason.kind, kind)
+    assert.equal(finish.reason.failure.code, code)
+  }
+})
+
+test('consumer backpressure does not abort a healthy provider stream', async () => {
+  let signal: AbortSignal | null | undefined
+  const adapter = new ChatJimmyAdapter({ ...CONFIG, streamIdleTimeoutMs: 20 }, async (_url, init) => {
+    signal = init.signal
+    return streamResponse(['hello', '<|stats|>{"done_reason":"stop"}<|/stats|>'])
+  })
+  const iterator = adapter.stream(OPTIONS)[Symbol.asyncIterator]()
+  try {
+    assert.equal((await iterator.next()).value?.type, 'block-start')
+    await new Promise(resolve => setTimeout(resolve, 40))
+    assert.equal(signal?.aborted, false, 'no provider read was pending during the consumer wait')
+    const chunks: StreamChunk[] = []
+    for (let next = await iterator.next(); !next.done; next = await iterator.next()) chunks.push(next.value)
+    assert.deepEqual(chunks.at(-1), { type: 'finish', reason: { kind: 'stop' } })
+  } finally {
+    await iterator.return?.()
+  }
 })
 
 test('a request that sets stop sequences is refused instead of dropped', async () => {

@@ -182,7 +182,9 @@ test('stats helpers tolerate junk', () => {
   assert.equal(isContextLimitReason('max  context  limit  6144  reached'), true)
   assert.equal(isContextLimitReason('termination token 128009 detected'), false)
   assert.equal(isContextLimitReason(undefined), false)
-  assert.deepEqual(mapUsage(undefined), { inputTokens: 0, outputTokens: 0, totalTokens: 0 })
+  assert.equal(mapUsage(undefined), undefined)
+  assert.equal(mapUsage({ done: true }), undefined)
+  assert.deepEqual(mapUsage({ prefill_tokens: 18 }), { inputTokens: 18, outputTokens: 0 })
   assert.deepEqual(
     mapUsage({ prefill_tokens: 18, decode_tokens: 4, total_tokens: 22 }),
     { inputTokens: 18, outputTokens: 4, totalTokens: 22 },

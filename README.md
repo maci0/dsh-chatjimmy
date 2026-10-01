@@ -9,7 +9,7 @@ Install it for chat, session titles, and compaction. It is not an agent model.
 - A `chatjimmy` provider route in the Web model picker, advertising `llama3.1-8B`.
 - A reported 6144-token context window (prompt **and** completion), measured against the live service.
 - Streaming replies with the trailing `<|stats|>…<|/stats|>` block stripped and reported as harness usage.
-- Failure codes the harness can act on: overflow is `CONTEXT_WINDOW_EXCEEDED`, a stalled stream is `TIMEOUT`, a refused `stop` list is `UNSUPPORTED_OPTION`, caller cancellation is `aborted`.
+- Failure codes the harness can act on: overflow is `CONTEXT_WINDOW_EXCEEDED`, a stalled stream is `TIMEOUT`, a refused `stop` list is `UNSUPPORTED_OPTION`, a history with no text to send is `INVALID_REQUEST` (no request leaves), caller cancellation is `aborted`.
 - No credential record to create. The endpoint is public and unauthenticated.
 
 ## Install
@@ -86,7 +86,7 @@ The answer streams in as plain text. Nothing else is needed: no key, no settings
 - **Attribution.** Every request carries `attributionHeaders()` from `@deepseek-ai/dsh-llm`, so `User-Agent` cannot drift from the installed harness. That package's pure helpers (`attributionHeaders()`, `resolveRetryPolicy()`) are the plugin's only runtime dependency on `@deepseek-ai/dsh-llm`; `@deepseek-ai/schemastery` supplies the row schema, and the adapter is duck-typed, not an `LlmAdapter` subclass.
 - **Request.** `POST {baseUrl}/api/chat` with the history flattened to text, every system- or developer-role message hoisted into the single `systemPrompt` slot, tool results projected onto user turns labelled `[tool result]` (the wire has no tool role), `attachment: null`.
 - **Streaming.** The stats filter holds back text only as far as a marker could still be forming, so time-to-first-token is unaffected. Usage is emitted only when the provider reported counters; a synthesized zero would claim a measurement that never happened.
-- **Failures.** HTTP 400/422 → `INVALID_REQUEST`, 401/403 → `AUTH`, 429 → `RATE_LIMIT`, 5xx → `SERVER`, anything else → `TRANSPORT`. A zero-byte HTTP 200 is the service's overflow signature, because the response headers are already committed as `text/event-stream`. That becomes `CONTEXT_WINDOW_EXCEEDED`, not an empty answer.
+- **Failures.** HTTP 400/422 → `INVALID_REQUEST`, 401/403 → `AUTH`, 429 → `RATE_LIMIT`, 5xx → `SERVER`, anything else → `TRANSPORT`. A zero-byte HTTP 200 is the service's overflow signature, because the response headers are already committed as `text/event-stream`. That becomes `CONTEXT_WINDOW_EXCEEDED`, not an empty answer. A request whose history flattens to no user or assistant text is refused before it is sent, as `INVALID_REQUEST`: the service answers an empty `messages` list with HTTP 500, which the harness would retry as `SERVER`.
 - **Stateless.** The service keeps no history, so the harness sends the full conversation every turn.
 
 The wire contract this adapter implements (`GET /api/health`, `GET /api/models`, `POST /api/chat`) is documented in [`API.md`](API.md). It was reconstructed from the JavaScript the site serves to any visitor plus ordinary requests: no authentication was bypassed and no private endpoint was reached.

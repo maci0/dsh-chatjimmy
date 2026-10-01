@@ -239,6 +239,17 @@ export class ChatJimmyAdapter implements LlmAdapterLike {
       yield errorFinish(unsupported)
       return
     }
+    // The backend answers an empty `messages` list with HTTP 500, which the
+    // harness would retry as SERVER; the same request can never succeed, so it
+    // is refused here with a code the default retry policy leaves alone.
+    const body = buildChatRequest(options, this.#config)
+    if (body.messages.length === 0) {
+      yield errorFinish({
+        message: 'chatjimmy: the request has no message text to send (the service needs at least one user or assistant turn)',
+        code: 'INVALID_REQUEST',
+      })
+      return
+    }
 
     // The idle watchdog owns its own controller so a stalled body read can be
     // torn down; the caller's signal is combined with it when present.
@@ -294,7 +305,7 @@ export class ChatJimmyAdapter implements LlmAdapterLike {
       response = await this.#fetch(`${this.#config.baseUrl}/api/chat`, {
         method: 'POST',
         headers,
-        body: JSON.stringify(buildChatRequest(options, this.#config)),
+        body: JSON.stringify(body),
         signal,
       })
     } catch (error) {

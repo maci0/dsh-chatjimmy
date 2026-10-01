@@ -9,7 +9,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { attributionHeaders } from '@deepseek-ai/dsh-llm'
+import { attributionHeaders, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
 
 import { ChatJimmyAdapter, CONTEXT_WINDOW_EXCEEDED_CODE, type FetchLike } from '../src/adapter.ts'
 import { resolveConfig } from '../src/index.ts'
@@ -224,4 +224,34 @@ test('a stats block without token counters reports no usage', async () => {
   const chunks = await collect(adapterWith(streamResponse(['hi', '<|stats|>{"done":true,"done_reason":"stop"}<|/stats|>'])))
   assert.equal(chunks.some(chunk => chunk.type === 'usage'), false)
   assert.deepEqual(chunks.at(-1), { type: 'finish', reason: { kind: 'stop' } })
+})
+
+test('a request whose history flattens to nothing is refused before any request is sent', async () => {
+  // The backend answers an empty `messages` list with HTTP 500 (API.md), which
+  // the harness would retry as SERVER. Only the system slot carries text here.
+  let calls = 0
+  const adapter = new ChatJimmyAdapter(CONFIG, async () => {
+    calls += 1
+    return streamResponse(['never sent'])
+  })
+  const chunks: StreamChunk[] = []
+  for await (const chunk of adapter.stream({
+    model: 'llama3.1-8B',
+    system: 'be brief',
+    messages: [
+      { id: '1', role: 'system', content: [{ type: 'text', text: 'loop system' }] },
+      { id: '2', role: 'user', content: [{ type: 'text', text: '' }] },
+    ],
+  })) chunks.push(chunk)
+
+  assert.equal(calls, 0)
+  assert.equal(chunks.length, 1)
+  const only = chunks[0] as { type: string; reason: { kind: string; failure: { code: string; message: string } } }
+  assert.equal(only.type, 'finish')
+  assert.equal(only.reason.kind, 'error')
+  assert.equal(only.reason.failure.code, 'INVALID_REQUEST')
+  assert.match(only.reason.failure.message, /no message text/)
+  // The harness's default retry policy must not retry this code.
+  const policy = resolveRetryPolicy({ mode: 'normal' }, 'test')
+  assert.ok(policy.mode === 'normal' && !policy.retryableCodes.includes(only.reason.failure.code))
 })

@@ -21,7 +21,7 @@ Install it for chat, session titles, and compaction. It is not an agent model.
 > would win).
 
 ```sh
-dsh plugin --profile web add github:maci0/dsh-chatjimmy#v0.8.0
+dsh plugin --profile web add github:maci0/dsh-chatjimmy#v0.9.0
 ```
 
 Pin a release tag: a bare `github:` spec floats on `main`. To upgrade, run the same command with the newer tag, then restart `dsh web` (bundle layers compose at boot).

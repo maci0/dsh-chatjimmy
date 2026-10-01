@@ -28,14 +28,15 @@ import type { GenerateOptions } from '../src/host.ts'
 const DELTAS = 8000
 
 /**
- * Median CPU milliseconds this workload costs on the slowest host it runs on,
- * and the tolerance multiplier. Measured under `node --test`: 2.2-3.0ms on the
- * recording host (AMD Ryzen 9 9950X, node v26.9.0, one core) and 4.6-6.9ms on
- * `ubuntu-latest` runners, so the constant is the slowest runner rounded up.
- * The band is a gate for an algorithmic regression (a per-record regex, an
- * O(n²) rebuild of the record buffer, a timer per read), not a micro-benchmark.
+ * Median CPU milliseconds this workload costs, with headroom for the slowest
+ * host it runs on, and the tolerance multiplier. Measured under `bun test`
+ * (bun 1.4.2): 0.17-0.28ms pinned to one core and 0.19-0.58ms inside a full
+ * run on the recording host (AMD Ryzen 9 9950X), so the constant leaves
+ * about 3x over the typical 0.2ms for a slower CI runner. The band is a gate
+ * for an algorithmic regression (a per-record regex, an O(n²) rebuild of the
+ * record buffer, a timer per read), not a micro-benchmark.
  */
-const BASELINE_CPU_MS = 8
+const BASELINE_CPU_MS = 0.6
 const TOLERANCE = 4
 
 const CONFIG = {

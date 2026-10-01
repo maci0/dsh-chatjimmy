@@ -1,8 +1,8 @@
 /**
  * Browser half: the ChatJimmy card on the Plugins page.
  *
- * The file is evaluated the way the client module system evaluates it (a
- * lazy-CJS factory registered on `window.__ModuleLoader__`) over a minimal
+ * The file is imported as a module under a stub `window.__ModuleLoader__`, the
+ * way the client module system loads its lazy-CJS factory, over a minimal
  * React (element trees plus two hooks) and a fake browser plugin context, so
  * the form's validation and its settings operations are checked without a DOM.
  *
@@ -42,19 +42,24 @@ function createReact(): { hooks: { cells: any[]; index: number }; createElement:
   }
 }
 
-/** Load `lib/client.js` through the module loader and return its exports. */
+/**
+ * The registration the shipped file hands `window.__ModuleLoader__.load` when
+ * evaluated. A stub loader is installed and the file is imported once as a real
+ * module; each test then runs the captured factory for a fresh instance.
+ */
+let captured: any
+Object.assign(globalThis, { window: { __ModuleLoader__: { load: (spec: any) => { captured = spec } } } })
+await import(new URL('../lib/client.js', import.meta.url).href)
+const REGISTRATION: any = captured
+
+/** Run the captured factory over a fresh React stub and return its exports. */
 function loadClient(): { registration: any; exports: any; React: ReturnType<typeof createReact> } {
-  let registration: any
-  const window = { __ModuleLoader__: { load: (spec: any) => { registration = spec } } }
-  // The file is a script, not a module: it registers itself, exactly as the
-  // module system evaluates it in the page.
-  new Function('window', SOURCE)(window)
   const React = createReact()
-  const exports = registration.factory((id: string) => {
+  const exports = REGISTRATION.factory((id: string) => {
     assert.equal(id, 'react')
     return React
   })
-  return { registration, exports, React }
+  return { registration: REGISTRATION, exports, React }
 }
 
 /** Render a component function with its own hook frame. */

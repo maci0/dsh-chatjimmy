@@ -195,3 +195,27 @@ test('the wire request carries attribution and the documented body', async () =>
     attachment: null,
   })
 })
+
+test('a tool-role result reaches the wire labelled as one', async () => {
+  // The harness carries a tool result as a `tool`-role message whose content is
+  // plain text blocks; there is no `tool-result` content block.
+  let sent: { messages: { role: string; content: string }[] } | undefined
+  const adapter = new ChatJimmyAdapter(CONFIG, async (_url, init) => {
+    sent = JSON.parse(String(init.body)) as typeof sent
+    return streamResponse(['done'])
+  })
+  const options: GenerateOptions = {
+    model: 'llama3.1-8B',
+    messages: [
+      { id: '1', role: 'user', content: [{ type: 'text', text: 'read x' }] },
+      { id: '2', role: 'assistant', content: [{ type: 'tool-call', id: 'c1', name: 'read', arguments: '{"path":"x"}' }] },
+      { id: '3', role: 'tool', toolCallId: 'c1', content: [{ type: 'text', text: 'ok' }] },
+    ],
+  }
+  for await (const _chunk of adapter.stream(options)) { /* drain */ }
+  assert.deepEqual(sent?.messages, [
+    { role: 'user', content: 'read x' },
+    { role: 'assistant', content: '[tool call] read({"path":"x"})' },
+    { role: 'user', content: '[tool result] ok' },
+  ])
+})

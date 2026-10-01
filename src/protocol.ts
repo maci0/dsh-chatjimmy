@@ -67,8 +67,6 @@ function blockText(block: ContentBlock): string {
       // The service has no tool protocol. Render the call as prose so a
       // cross-provider history still reads as a conversation.
       return `[tool call] ${String(block.name)}(${String(block.arguments)})`
-    case 'tool-result':
-      return `[tool result] ${flatten((block.content ?? []) as readonly ContentBlock[])}`
     default:
       // Images and files are already projected to text for a text-only route
       // by LlmRuntime; anything else unknown is dropped rather than guessed.
@@ -97,9 +95,10 @@ export function buildChatRequest(options: GenerateOptions, config: ChatJimmyConf
     }
     if (text.length === 0) continue
     // The wire accepts user/assistant turns only, so a tool result rides the
-    // user turn — the same projection the harness's own adapters use for a
-    // provider with no tool role.
-    messages.push({ role: message.role === 'tool' ? 'user' : message.role, content: text })
+    // user turn (the harness's own adapters do the same for a provider with no
+    // tool role), labelled so it does not read as the user's own words.
+    if (message.role === 'tool') messages.push({ role: 'user', content: `[tool result] ${text}` })
+    else messages.push({ role: message.role, content: text })
   }
   if (options.system !== undefined && options.system.length > 0) systemParts.unshift(options.system)
   return {

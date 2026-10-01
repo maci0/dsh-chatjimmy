@@ -11,8 +11,8 @@
  *   `process.cpuUsage()` as the median of several runs over a fixed,
  *   network-free chunk stream with the first run dropped. The band is
  *   deliberately wide (4x the recorded baseline): it is a loaded-CI gate for an
- *   algorithmic regression — a per-record regex, an O(n²) rebuild of the record
- *   buffer, a timer per read — not a micro-benchmark. Tighten it on dedicated
+ *   algorithmic regression (a per-record regex, an O(n²) rebuild of the record
+ *   buffer, a timer per read), not a micro-benchmark. Tighten it on dedicated
  *   hardware, never below 2x.
  *
  * @module dsh-chatjimmy/tests/perf
@@ -32,8 +32,8 @@ const DELTAS = 8000
  * and the tolerance multiplier. Measured under `node --test`: 2.2-3.0ms on the
  * recording host (AMD Ryzen 9 9950X, node v26.9.0, one core) and 4.6-6.9ms on
  * `ubuntu-latest` runners, so the constant is the slowest runner rounded up.
- * The band is a gate for an algorithmic regression — a per-record regex, an
- * O(n²) rebuild of the record buffer, a timer per read — not a micro-benchmark.
+ * The band is a gate for an algorithmic regression (a per-record regex, an
+ * O(n²) rebuild of the record buffer, a timer per read), not a micro-benchmark.
  */
 const BASELINE_CPU_MS = 8
 const TOLERANCE = 4

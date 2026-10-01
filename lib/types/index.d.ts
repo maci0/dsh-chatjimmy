@@ -1,12 +1,12 @@
 /**
- * dsh-chatjimmy — use the chatjimmy.ai model inside DeepSeek Harness.
+ * dsh-chatjimmy: use the chatjimmy.ai model inside DeepSeek Harness.
  *
  * One capability: an `ctx.llm` provider adapter for the reconstructed chat API
  * (see `API.md`). Registering it makes the route selectable in the Web client's
  * model picker, because `buildModelCatalog()` enumerates `ctx.llm.listProviders()`
  * and asks each adapter for `listModels()` / `resolveModel()`.
  *
- * See README.md for the known limits — the service has no tool-calling, no
+ * See README.md for the known limits: the service has no tool-calling, no
  * image input, and a 6144-token total context.
  *
  * @module dsh-chatjimmy
@@ -26,7 +26,7 @@ export declare const inject: string[];
  * Configuration this plugin's row resolves to, as `apply` receives it.
  *
  * Every field a user may edit is `volatile()`, and the loader hands a volatile
- * field a live reference rather than a value — the schema's own output type,
+ * field a live reference rather than a value: the schema's own output type,
  * `Volatile<T>`. Reading `.get()` at use time is what makes an edit from the
  * Plugins card reach the next request without remounting the route.
  */
@@ -63,7 +63,7 @@ export type Options = {
  * Row schema as Cordis resolves it: defaults live here, so a deployment only
  * states what it changes.
  *
- * Every field a user may edit is `volatile()` — the settings document accepts
+ * Every field a user may edit is `volatile()`: the settings document accepts
  * only volatile paths, and the browser half's card edits exactly these. The
  * adapter resolves the row per read, so an edit lands on the next request
  * instead of waiting for a remount. `retryPolicy` stays ordinary
@@ -88,7 +88,7 @@ export declare const Config: Schema<Schemastery.ObjectS<NoInfer<{
  * Validate and normalize one configuration row.
  *
  * The row is fed back through the exported `Config` schema, which is the one
- * source of the defaults and the numeric bounds — Cordis already ran the same
+ * source of the defaults and the numeric bounds. Cordis already ran the same
  * schema before `apply`, so this only makes `resolveConfig` usable on its own.
  * What the schema cannot express is checked here: invalid values throw rather
  * than being silently defaulted, because a typo'd base URL would otherwise

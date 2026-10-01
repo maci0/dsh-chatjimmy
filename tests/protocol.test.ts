@@ -63,10 +63,9 @@ test('renders tool blocks as prose because the service has no tool protocol', ()
   const text = flatten([
     { type: 'text', text: 'a' },
     { type: 'tool-call', id: 'c1', name: 'read', arguments: '{"path":"x"}' },
-    { type: 'tool-result', toolCallId: 'c1', content: [{ type: 'text', text: 'ok' }] },
     { type: 'image', attachment: {} },
   ])
-  assert.equal(text, 'a[tool call] read({"path":"x"})[tool result] ok')
+  assert.equal(text, 'a[tool call] read({"path":"x"})')
 })
 
 test('a cross-provider tool history stays inside the user/assistant wire roles', () => {
@@ -78,7 +77,7 @@ test('a cross-provider tool history stays inside the user/assistant wire roles',
     messages: [
       { id: '1', role: 'user', content: [{ type: 'text', text: 'read x' }] },
       { id: '2', role: 'assistant', content: [{ type: 'tool-call', id: 'c1', name: 'read', arguments: '{"path":"x"}' }] },
-      { id: '3', role: 'tool', toolCallId: 'c1', content: [{ type: 'tool-result', toolCallId: 'c1', content: [{ type: 'text', text: 'ok' }] }] },
+      { id: '3', role: 'tool', toolCallId: 'c1', content: [{ type: 'text', text: 'ok' }] },
       { id: '4', role: 'developer', content: [{ type: 'text', text: 'be terse' }] },
     ],
   }

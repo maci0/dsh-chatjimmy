@@ -1,8 +1,8 @@
 /**
  * Browser half: the ChatJimmy card on the Plugins page.
  *
- * The file is evaluated the way the client module system evaluates it — a
- * lazy-CJS factory registered on `window.__ModuleLoader__` — over a minimal
+ * The file is evaluated the way the client module system evaluates it (a
+ * lazy-CJS factory registered on `window.__ModuleLoader__`) over a minimal
  * React (element trees plus two hooks) and a fake browser plugin context, so
  * the form's validation and its settings operations are checked without a DOM.
  *

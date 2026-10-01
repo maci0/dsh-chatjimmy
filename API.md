@@ -1,7 +1,7 @@
-# chatjimmy.ai — reverse-engineered API
+# chatjimmy.ai: reverse-engineered API
 
 Target: `https://chatjimmy.ai` (Next.js App Router, `x-powered-by: Next.js`, build `DCOFyTwcWkVONHBVSbo_G`).
-Method: static analysis of the served JS chunks (`recon/js/`) plus live black-box probing.
+Method: static analysis of the served JS chunks plus live black-box probing.
 Owner per UI/legal links: Taalas Inc.
 
 ## Endpoint inventory
@@ -75,17 +75,17 @@ Request: `content-type: application/json`.
 - `messages` is required. Standard user/assistant history, sent in full on every turn
   (`useChat` from Vercel AI SDK v3, `streamMode: "text"`, with `options.body` merged in).
   Message `id` is client-generated; the server echoes the last assistant id back in the stream.
-- `chatOptions.selectedModel` is required — any non-empty string passes. The value is **not**
+- `chatOptions.selectedModel` is required: any non-empty string passes. The value is **not**
   validated against `/api/models`; `"gpt-4"` is accepted and produces normal output. Only one
   model is actually served.
 - `chatOptions.systemPrompt` optional, prepended as a system message. Verified working.
 - `chatOptions.topK` optional. Client default is 8; when omitted the upstream reports `topk: 1`.
 - `attachment` optional, `null` when absent. Client reads the picked file **as UTF-8 text**
-  (`File.text()`), rejects files over 51200 bytes, and sends raw text — not base64, no content type.
+  (`File.text()`), rejects files over 51200 bytes, and sends raw text, not base64, with no content type.
 - `NEXT_PUBLIC_TOKEN_LIMIT` defaults to `6144` in the client; it only drives a UI counter.
 
 Response: HTTP 200, `content-type: text/event-stream; charset=utf-8`,
-`cache-control: no-cache, no-transform`. The body is **not** SSE-framed — it is the raw
+`cache-control: no-cache, no-transform`. The body is **not** SSE-framed: it is the raw
 generated text, streamed incrementally. Appended at the end, in the same byte stream:
 
 ```
@@ -126,7 +126,7 @@ exposed in any response header.
 No `x-ratelimit-*` headers on any route and no 429 observed. Backpressure is surfaced only through
 `/api/health`'s `backendDetails.queue_size`.
 
-## Runtime behaviour worth noting
+## Runtime behaviour
 
 - The root layout gates the whole app: it `GET /api/health` with a 3 s abort, redirects to `/down`
   when it fails, and re-polls every 10 s while there.
@@ -137,12 +137,9 @@ No `x-ratelimit-*` headers on any route and no 429 observed. Backpressure is sur
 ## Reproducing
 
 ```bash
-python3 jimmy_client.py                      # self-check + one live turn
 curl -sS https://chatjimmy.ai/api/health
 curl -sS https://chatjimmy.ai/api/models
 curl -sS -X POST https://chatjimmy.ai/api/chat -H 'Content-Type: application/json' \
   --data '{"messages":[{"role":"user","content":"Say hi in 3 words."}],
            "chatOptions":{"selectedModel":"llama3.1-8B","systemPrompt":"","topK":8}}'
 ```
-
-Raw captures: `recon/index.html`, `recon/js/*.js`, `recon/chat_probe1.txt`, `recon/chat_err.txt`.

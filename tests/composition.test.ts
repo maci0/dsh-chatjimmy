@@ -3,7 +3,7 @@
  * `Context` over a minimal `llm` service.
  *
  * The adapter is duck-typed, so nothing in the plugin records its own
- * registration — the route list and its withdrawal are the service's business.
+ * registration: the route list and its withdrawal are the service's business.
  * The stub owns routes through the calling fiber's effect, exactly as
  * `LlmRuntime.registerAdapter` does, which is what makes "mounting registers,
  * disposal withdraws" observable without the harness.

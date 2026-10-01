@@ -4,7 +4,7 @@
  *
  * The service is text-in/text-out: it accepts no tool schemas, no images, no
  * sampling parameters, and returns one plain-text stream. This adapter is
- * therefore honest about being a text-only route — it advertises
+ * therefore honest about being a text-only route: it advertises
  * `inputModalities: ['text']` so `LlmRuntime` projects files and images to
  * placeholder text before dispatch, and it ignores every tool field rather than
  * pretending the model can call them.
@@ -24,8 +24,8 @@ export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
  *
  * `LlmRuntime` reaches adapters through plain method calls, so this object
  * needs no harness base class. The plugin's only runtime dependency on
- * `@deepseek-ai/*` is `@deepseek-ai/dsh-llm`'s pure helpers —
- * `attributionHeaders()` and `resolveRetryPolicy()` — never its error classes
+ * `@deepseek-ai/*` is `@deepseek-ai/dsh-llm`'s pure helpers
+ * (`attributionHeaders()` and `resolveRetryPolicy()`), never its error classes
  * or adapter base class.
  */
 export declare class ChatJimmyAdapter implements LlmAdapterLike {

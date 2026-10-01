@@ -318,6 +318,23 @@ test('an overridden row offers a reset that clears exactly the user layer', asyn
   assert.deepEqual(client.mutations, [[{ op: 'unset', path: ['model'] }]])
 })
 
+test('a pending write disables fields and conflicting save/reset actions', async () => {
+  const client = createClient({ user: { model: 'override' } })
+  client.apply()
+  const button = (tree: Tree, label: string) => findAll(tree, 'button').find(candidate => textOf(candidate) === label)
+  let tree = setField(client, 'labelModel', 'new-model')
+  button(tree, 'save')?.props.onClick()
+  tree = client.render({ view: 'page' })
+  assert.ok(findAll(tree, 'input').every(input => input.props.disabled))
+  assert.equal(button(tree, 'save')?.props.disabled, true)
+  assert.equal(button(tree, 'reset')?.props.disabled, true)
+  button(tree, 'save')?.props.onClick()
+  button(tree, 'reset')?.props.onClick()
+  await client.flush()
+  assert.equal(client.mutations.length, 1)
+  assert.ok(findAll(client.render({ view: 'page' }), 'input').every(input => !input.props.disabled))
+})
+
 test('the card version stays in lockstep with package.json', () => {
   assert.match(SOURCE, new RegExp(`const VERSION = '${PACKAGE.version.replace(/\./gu, '\\.')}'`))
 })

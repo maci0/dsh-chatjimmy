@@ -57,7 +57,7 @@ export type FetchLike = (input: string, init: RequestInit) => Promise<Response>
  * `{"success":false,"error":"…"}` for every rejection, so the body is the
  * specific part and the status is only the class.
  */
-function failureForStatus(status: number, detail: string): LlmFailure {
+function failureForStatus(status: number, detail: string, headers: Headers): LlmFailure {
   const code = status === 400 || status === 422
     ? 'INVALID_REQUEST'
     : status === 401 || status === 403
@@ -67,7 +67,13 @@ function failureForStatus(status: number, detail: string): LlmFailure {
         : status >= 500
           ? 'SERVER'
           : 'TRANSPORT'
-  return { message: `chatjimmy: HTTP ${status}${detail.length > 0 ? `: ${detail}` : ''}`, code, status }
+  const retry = headers.get('retry-after')?.trim()
+  const delay = retry === undefined ? NaN : /^\d+(?:\.\d+)?$/u.test(retry)
+    ? Number(retry) * 1000 : /^[A-Za-z]/u.test(retry) ? Date.parse(retry) - Date.now() : NaN
+  return {
+    message: `chatjimmy: HTTP ${status}${detail.length > 0 ? `: ${detail}` : ''}`, code, status,
+    ...(Number.isFinite(delay) && delay > 0 ? { providerRetryAfterMs: delay } : {}),
+  }
 }
 
 /** The one failure the backend's own context-limit refusal produces. */
@@ -327,7 +333,7 @@ export class ChatJimmyAdapter implements LlmAdapterLike {
     }
 
     if (!response.ok) {
-      yield errorFinish(failureForStatus(response.status, await errorDetail(response)))
+      yield errorFinish(failureForStatus(response.status, await errorDetail(response), response.headers))
       return
     }
     if (response.body === null) {

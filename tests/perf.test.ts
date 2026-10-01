@@ -29,14 +29,13 @@ const DELTAS = 8000
 
 /**
  * Median CPU milliseconds this workload costs, with headroom for the slowest
- * host it runs on, and the tolerance multiplier. Measured under `bun test`
- * (bun 1.4.2): 0.17-0.28ms pinned to one core and 0.19-0.58ms inside a full
- * run on the recording host (AMD Ryzen 9 9950X), so the constant leaves
- * about 3x over the typical 0.2ms for a slower CI runner. The band is a gate
+ * host it runs on, and the tolerance multiplier. bun 1.4.2 costs 0.19-0.58ms;
+ * Node 22.19 costs 2.68-3.61ms on the same AMD Ryzen 9 9950X. Each runtime
+ * keeps four times its measured baseline for a slower CI runner. The band is a gate
  * for an algorithmic regression (a per-record regex, an O(n²) rebuild of the
  * record buffer, a timer per read), not a micro-benchmark.
  */
-const BASELINE_CPU_MS = 0.6
+const BASELINE_CPU_MS = process.versions.bun === undefined ? 3.7 : 0.6
 const TOLERANCE = 4
 
 const CONFIG = {

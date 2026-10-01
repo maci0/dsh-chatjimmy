@@ -21,7 +21,7 @@ Install it for chat, session titles, and compaction. It is not an agent model.
 > would win).
 
 ```sh
-dsh plugin --profile web add github:maci0/dsh-chatjimmy#v0.11.0
+dsh plugin --profile web add github:maci0/dsh-chatjimmy#v0.11.1
 ```
 
 Pin a release tag: a bare `github:` spec floats on `main`. To upgrade, run the same command with the newer tag, then restart `dsh web` (bundle layers compose at boot).
@@ -82,6 +82,8 @@ Suggest four names for a CLI that renames photos.
 The answer streams in as plain text. Nothing else is needed: no key, no settings page visit.
 
 ## How it works
+
+Failed HTTP requests forward valid `Retry-After` seconds or HTTP dates to the harness retry policy. Invalid, non-positive, and past delays are omitted.
 
 - **Attribution.** Every request carries `attributionHeaders()` from `@deepseek-ai/dsh-llm`, so `User-Agent` cannot drift from the installed harness. That package's pure helpers (`attributionHeaders()`, `resolveRetryPolicy()`) are the plugin's only runtime dependency on `@deepseek-ai/dsh-llm`; `@deepseek-ai/schemastery` supplies the row schema, and the adapter is duck-typed, not an `LlmAdapter` subclass.
 - **Request.** `POST {baseUrl}/api/chat` with the history flattened to text, every system- or developer-role message hoisted into the single `systemPrompt` slot, tool results projected onto user turns labelled `[tool result]` (the wire has no tool role), `attachment: null`.

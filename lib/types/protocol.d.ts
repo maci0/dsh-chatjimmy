@@ -68,9 +68,11 @@ export declare function isContextLimitReason(reason: unknown): boolean;
 /**
  * Map backend token counters onto harness usage.
  * @param stats - parsed stats, when the stream carried them.
- * @returns disjoint harness counts; the provider reports no cache split.
+ * @returns disjoint harness counts (the provider reports no cache split), or
+ *   undefined when the stats carry neither prompt nor output counter. The total
+ *   is the provider's own, else the sum when both parts are known, else omitted.
  */
-export declare function mapUsage(stats: ChatStats | undefined): TokenUsage;
+export declare function mapUsage(stats: ChatStats | undefined): TokenUsage | undefined;
 /**
  * Splits the generated text from the trailing `<|stats|>…<|/stats|>` block
  * without ever emitting a partial marker.

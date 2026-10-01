@@ -219,3 +219,9 @@ test('a tool-role result reaches the wire labelled as one', async () => {
     { role: 'user', content: '[tool result] ok' },
   ])
 })
+
+test('a stats block without token counters reports no usage', async () => {
+  const chunks = await collect(adapterWith(streamResponse(['hi', '<|stats|>{"done":true,"done_reason":"stop"}<|/stats|>'])))
+  assert.equal(chunks.some(chunk => chunk.type === 'usage'), false)
+  assert.deepEqual(chunks.at(-1), { type: 'finish', reason: { kind: 'stop' } })
+})

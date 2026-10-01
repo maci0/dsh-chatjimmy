@@ -381,7 +381,8 @@ export class ChatJimmyAdapter implements LlmAdapterLike {
     yield { type: 'block-end', index, block: { type: 'text', text: assembled } }
     // Usage is reported only when the provider reported it; a synthesized zero
     // would claim a measurement that never happened.
-    if (stats !== undefined) yield { type: 'usage', usage: mapUsage(stats) }
+    const usage = mapUsage(stats)
+    if (usage !== undefined) yield { type: 'usage', usage }
     yield { type: 'finish', reason: finishReasonFor(stats) }
   }
 }

@@ -130,16 +130,25 @@ export function isContextLimitReason(reason: unknown): boolean {
   return typeof reason === 'string' && /max\s+context\s+limit\s+\d+\s+reached/i.test(reason)
 }
 
+/** A token counter, or undefined when the stats did not carry a usable one. */
+function counter(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined
+}
+
 /**
  * Map backend token counters onto harness usage.
  * @param stats - parsed stats, when the stream carried them.
- * @returns disjoint harness counts; the provider reports no cache split.
+ * @returns disjoint harness counts (the provider reports no cache split), or
+ *   undefined when the stats carry neither prompt nor output counter. The total
+ *   is the provider's own, else the sum when both parts are known, else omitted.
  */
-export function mapUsage(stats: ChatStats | undefined): TokenUsage {
-  const input = typeof stats?.prefill_tokens === 'number' ? stats.prefill_tokens : 0
-  const output = typeof stats?.decode_tokens === 'number' ? stats.decode_tokens : 0
-  const total = typeof stats?.total_tokens === 'number' ? stats.total_tokens : input + output
-  return { inputTokens: input, outputTokens: output, totalTokens: total }
+export function mapUsage(stats: ChatStats | undefined): TokenUsage | undefined {
+  const input = counter(stats?.prefill_tokens)
+  const output = counter(stats?.decode_tokens)
+  if (input === undefined && output === undefined) return undefined
+  const total = counter(stats?.total_tokens)
+    ?? (input === undefined || output === undefined ? undefined : input + output)
+  return { inputTokens: input ?? 0, outputTokens: output ?? 0, ...total === undefined ? {} : { totalTokens: total } }
 }
 
 /**

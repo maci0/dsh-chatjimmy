@@ -107,16 +107,16 @@ The API accepts no `tools` field, so the adapter ignores `options.tools` rather 
 ## Development
 
 ```sh
-npm test           # node --test tests/*.test.ts: hermetic, stubbed transport, no network
-npm run build      # tsc -p tsconfig.build.json → lib/index.js + lib/types/
-npm run typecheck  # tsc -p tsconfig.json
+bun test           # hermetic, stubbed transport, no network
+bun run build      # tsc -p tsconfig.build.json → lib/index.js + lib/types/
+bun run typecheck  # tsc -p tsconfig.json
 ```
 
-The package ships the built `lib/` and declares `dsh.bundle`, so a change to `src/` needs `npm run build` before it takes effect. For local development, run `npm run build`, then `dsh plugin --profile <name> add <path-to-checkout>`.
+The package ships the built `lib/` and declares `dsh.bundle`, so a change to `src/` needs `bun run build` before it takes effect. For local development, run `bun run build`, then `dsh plugin --profile <name> add <path-to-checkout>`.
 
 Coverage: the wire-body projection and the stats splitter, including every single-character split point of the sentinel; the stream contract and both failure signatures over a stubbed fetch; and a real Cordis `Context` mount proving the route is registered and withdrawn with the fiber.
 
-Requires Node `^22.19.0 || >=24.0.0`.
+dsh loads plugins on Node `^22.19.0 || >=24.0.0`; development and tests run on bun.
 
 ## Licence
 

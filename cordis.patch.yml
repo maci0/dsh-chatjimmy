@@ -7,7 +7,7 @@
 # dedupe ids, and a second row would register the plugin twice.
 - insert:
     - id: chatjimmy
-      name: 'dsh-chatjimmy'
+      name: '@maci0/dsh-chatjimmy'
       config:
         model: llama3.1-8B
         topK: 8

@@ -176,7 +176,7 @@ test('apply binds the namespace and registers the row card', () => {
   assert.equal(typeof client.locale.dictionaries.en.labelBaseUrl, 'string')
   assert.equal(typeof client.locale.dictionaries.zh.labelBaseUrl, 'string')
   assert.equal(client.injected, 'plugins.row.config')
-  assert.equal(client.slot.key, 'dsh-chatjimmy#chatjimmy')
+  assert.equal(client.slot.key, '@maci0/dsh-chatjimmy#chatjimmy')
   assert.equal(client.slot.locale, 'chatjimmy')
 })
 

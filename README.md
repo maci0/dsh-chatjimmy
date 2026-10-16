@@ -21,12 +21,11 @@ Install it for chat, session titles, and compaction. It is not an agent model.
 > would win).
 
 ```sh
-dsh plugin --profile web add github:maci0/dsh-chatjimmy#v0.11.6
+dsh plugin --profile web add --save-exact @maci0/dsh-chatjimmy@0.12.0
 ```
 
-Pin a release tag: a bare `github:` spec floats on `main`. To upgrade, run the
-same command with the newer tag, then restart `dsh web` (bundle layers compose
-at boot).
+Pin an exact npm version. To upgrade, run the same command with the newer
+version, then restart `dsh web` (bundle layers compose at boot).
 
 ## Configure
 

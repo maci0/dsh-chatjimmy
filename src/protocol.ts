@@ -163,7 +163,6 @@ export function mapUsage(stats: ChatStats | undefined): TokenUsage | undefined {
 export class StatsStreamFilter {
   #buffer = ''
   #stats: ChatStats | undefined
-  #closed = false
 
   /**
    * Absorb one decoded chunk.
@@ -171,28 +170,30 @@ export class StatsStreamFilter {
    * @returns the prefix that is certainly completion text.
    */
   push(text: string): string {
-    if (this.#closed || text.length === 0) return ''
+    if (text.length === 0) return ''
     this.#buffer += text
-    const open = this.#buffer.indexOf(STATS_OPEN)
-    if (open < 0) {
-      // No marker yet: hold back only what a split marker could consume.
-      const keep = STATS_OPEN.length - 1
-      if (this.#buffer.length <= keep) return ''
-      const emit = this.#buffer.slice(0, this.#buffer.length - keep)
-      this.#buffer = this.#buffer.slice(-keep)
-      return emit
+    let emit = ''
+    for (;;) {
+      const open = this.#buffer.lastIndexOf(STATS_OPEN)
+      if (open < 0) {
+        // No marker yet: hold back only what a split marker could consume.
+        const keep = STATS_OPEN.length - 1
+        if (this.#buffer.length <= keep) return emit
+        emit += this.#buffer.slice(0, this.#buffer.length - keep)
+        this.#buffer = this.#buffer.slice(-keep)
+        return emit
+      }
+      emit += this.#buffer.slice(0, open)
+      this.#buffer = this.#buffer.slice(open)
+      const close = this.#buffer.indexOf(STATS_CLOSE)
+      if (close < 0) return emit
+      const end = close + STATS_CLOSE.length
+      const tail = this.#buffer.slice(end)
+      // Only a stream suffix is metadata; a quoted marker is ordinary text.
+      if (tail.trim() === '') return emit
+      emit += this.#buffer.slice(0, end)
+      this.#buffer = tail
     }
-    const emit = this.#buffer.slice(0, open)
-    const rest = this.#buffer.slice(open)
-    const close = rest.indexOf(STATS_CLOSE)
-    if (close < 0) {
-      this.#buffer = rest
-      return emit
-    }
-    this.#stats = parseStats(rest.slice(STATS_OPEN.length, close))
-    this.#buffer = ''
-    this.#closed = true
-    return emit
   }
 
   /**
@@ -200,10 +201,12 @@ export class StatsStreamFilter {
    * @returns residual completion text; empty when the body ended on the marker.
    */
   flush(): string {
-    if (this.#closed || this.#buffer.length === 0) return ''
+    if (this.#buffer.length === 0) return ''
     // A full opening marker was seen, so nothing still buffered is completion
     // text: a block the body cut short must not be printed as the answer.
     if (this.#buffer.startsWith(STATS_OPEN)) {
+      const close = this.#buffer.indexOf(STATS_CLOSE)
+      if (close >= 0) this.#stats = parseStats(this.#buffer.slice(STATS_OPEN.length, close))
       this.#buffer = ''
       return ''
     }

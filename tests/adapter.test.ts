@@ -295,10 +295,11 @@ test('a request whose history flattens to nothing is refused before any request 
 })
 
 
-test('failed requests preserve valid Retry-After delays and omit invalid ones', async () => {
+test('failed requests preserve valid Retry-After delays and omit invalid ones', async (t) => {
+  t.mock.method(Date, 'now', () => Date.UTC(2026, 9, 16))
   const future = new Date(Date.now() + 60_000).toUTCString()
   const cases: [string | undefined, number | undefined][] = [
-    ['12', 12_000], ['0.5', 500], [' 2 ', 2_000], [future, -1],
+    ['12', 12_000], ['0.5', 500], [' 2 ', 2_000], [future, 60_000],
     [undefined, undefined], ['', undefined], ['0', undefined], ['-9999', undefined],
     ['1e3', undefined], ['Infinity', undefined], ['nonsense', undefined],
     ['Wed, 01 Jan 2020 00:00:00 GMT', undefined], ['9'.repeat(400), undefined],
@@ -312,11 +313,7 @@ test('failed requests preserve valid Retry-After delays and omit invalid ones', 
     const failure = finish.reason.failure
     assert.equal(failure.code, 'RATE_LIMIT')
     assert.equal(failure.status, 429)
-    if (expected === -1) {
-      assert.ok(failure.providerRetryAfterMs! > 55_000 && failure.providerRetryAfterMs! <= 60_000)
-    } else {
-      assert.equal(failure.providerRetryAfterMs, expected, String(header))
-      if (expected === undefined) assert.equal('providerRetryAfterMs' in failure, false)
-    }
+    assert.equal(failure.providerRetryAfterMs, expected, String(header))
+    if (expected === undefined) assert.equal('providerRetryAfterMs' in failure, false)
   }
 })

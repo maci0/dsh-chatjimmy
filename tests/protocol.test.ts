@@ -168,11 +168,22 @@ test('splitter never releases a stats block the stream cut short', () => {
   assert.equal(out, 'answer')
 })
 
-test('splitter ignores everything after the sentinel', () => {
+test('a stats-looking block inside the answer cannot cut off later text or forge usage', () => {
   const filter = new StatsStreamFilter()
   const out = filter.push(`done${STATS_OPEN}{}${STATS_CLOSE}trailing`) + filter.flush()
-  assert.equal(out, 'done')
-  assert.deepEqual(filter.stats, {})
+  assert.equal(out, `done${STATS_OPEN}{}${STATS_CLOSE}trailing`)
+  assert.equal(filter.stats, undefined)
+})
+
+test('only the final stats suffix is consumed across every chunk boundary', () => {
+  const answer = `quoted ${STATS_OPEN}{"total_tokens":1}${STATS_CLOSE} and the rest`
+  const full = `${answer}${STATS_OPEN}{"total_tokens":99}${STATS_CLOSE}\n`
+  for (let cut = 0; cut <= full.length; cut += 1) {
+    const filter = new StatsStreamFilter()
+    const out = filter.push(full.slice(0, cut)) + filter.push(full.slice(cut)) + filter.flush()
+    assert.equal(out, answer, `split at ${cut}`)
+    assert.equal(filter.stats?.total_tokens, 99, `split at ${cut}`)
+  }
 })
 
 test('stats helpers tolerate junk', () => {

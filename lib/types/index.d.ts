@@ -75,14 +75,14 @@ export declare const Config: Schema<Schemastery.ObjectS<NoInfer<{
     topK: Schema<number, number, "volatile-defined">;
     contextWindow: Schema<number, number, "volatile-defined">;
     streamIdleTimeoutMs: Schema<number, number, "volatile-defined">;
-    retryPolicy: Schema<RetryPolicyConfig>;
+    retryPolicy: import("@deepseek-ai/schemastery").default<RetryPolicyConfig>;
 }>>, Schemastery.ObjectT<NoInfer<{
     baseUrl: Schema<string, string, "volatile-defined">;
     model: Schema<string, string, "volatile-defined">;
     topK: Schema<number, number, "volatile-defined">;
     contextWindow: Schema<number, number, "volatile-defined">;
     streamIdleTimeoutMs: Schema<number, number, "volatile-defined">;
-    retryPolicy: Schema<RetryPolicyConfig>;
+    retryPolicy: import("@deepseek-ai/schemastery").default<RetryPolicyConfig>;
 }>>, "plain">;
 /**
  * Validate and normalize one configuration row.

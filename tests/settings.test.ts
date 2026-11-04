@@ -122,7 +122,7 @@ test('mounting hands the adapter the live row, not a snapshot', async () => {
   // The settings document commits a volatile write through this same helper and
   // then emits `loader/volatile-update`; the adapter is never rebuilt, which is
   // the whole point of the volatile fields.
-  const resolved = (fiber as unknown as { config: { model: Volatile<string> } }).config
+  const resolved = (fiber as unknown as { effectiveConfig: { model: Volatile<string> } }).effectiveConfig
   updateVolatile(resolved.model, createVolatile('later'))
   assert.equal((await adapter.listModels(plugin.PROVIDER))[0]?.id, 'later')
 
@@ -146,7 +146,7 @@ test('an edit that made the live row unusable is contained, not thrown at the ho
 
   // A card write is committed before the plugin sees it, so the listener must
   // report an unusable row rather than break the event that carried it.
-  const resolved = (fiber as unknown as { config: { baseUrl: Volatile<string> } }).config
+  const resolved = (fiber as unknown as { effectiveConfig: { baseUrl: Volatile<string> } }).effectiveConfig
   updateVolatile(resolved.baseUrl, createVolatile('not-a-url'))
   const emitter = fiber.ctx as unknown as { emit(event: string): void }
   assert.doesNotThrow(() => { emitter.emit('loader/volatile-update') })

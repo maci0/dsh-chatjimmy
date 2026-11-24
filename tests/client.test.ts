@@ -18,7 +18,7 @@ type Element = { type: any; props: Record<string, any> & { children?: any } }
 type Tree = any
 
 const SOURCE = readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8')
-const PACKAGE = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }
+const PACKAGE = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { name: string, version: string }
 
 /** The element tree plus the hooks a component reaches for. */
 function createReact(): { hooks: { cells: any[]; index: number }; createElement: any; useState: any; useSyncExternalStore: any } {
@@ -110,7 +110,7 @@ function textOf(node: any): string {
 /** One fake browser context with its recorded surface and a mutable scope. */
 function createClient(options: { status?: string, writable?: boolean, acceptWrites?: boolean, value?: Record<string, unknown>, user?: Record<string, unknown> } = {}): any {
   const { exports, React } = loadClient()
-  const record: any = { mutations: [], ops: [] }
+  const record: any = { mutations: [], ops: [], disposers: [] }
   const snapshot = {
     status: options.status ?? 'ready',
     value: options.value ?? { baseUrl: 'https://chatjimmy.ai', model: 'llama3.1-8B', topK: 8, contextWindow: 6144, streamIdleTimeoutMs: 300_000 },
@@ -141,7 +141,12 @@ function createClient(options: { status?: string, writable?: boolean, acceptWrit
       },
       register: (ns: string, dictionaries: unknown) => { record.locale = { ns, dictionaries } },
     },
-    effect: (callback: () => unknown, label: string) => { record.effects = [...(record.effects ?? []), label]; return callback() },
+    effect: (callback: () => unknown, label: string) => {
+      record.effects = [...(record.effects ?? []), label]
+      const dispose = callback()
+      if (typeof dispose === 'function') record.disposers.push(dispose)
+      return dispose
+    },
     configForms: { get: (ns: string) => { record.configNs = ns; return scope } },
     slots: {
       inject: (name: string, callback: () => void) => { record.injected = name; callback() },
@@ -150,6 +155,7 @@ function createClient(options: { status?: string, writable?: boolean, acceptWrit
   }
   record.exports = exports
   record.apply = () => exports.apply(ctx)
+  record.dispose = () => { for (const dispose of record.disposers.splice(0).reverse()) dispose() }
   record.render = (props: any) => mountComponent(record.component, props, React)
   record.flush = () => new Promise((resolve) => { setImmediate(resolve) })
   record.inputs = (tree: any) => findAll(tree, 'input')
@@ -333,6 +339,43 @@ test('a pending write disables fields and conflicting save/reset actions', async
   await client.flush()
   assert.equal(client.mutations.length, 1)
   assert.ok(findAll(client.render({ view: 'page' }), 'input').every(input => !input.props.disabled))
+})
+
+/** A `document` with just the head a stylesheet is appended to. */
+function createDocument(): any {
+  const head: any = { children: [], append: (node: any) => { head.children.push(node) } }
+  return {
+    head,
+    createElement: (tagName: string) => {
+      const attributes = new Map<string, string>()
+      const node = {
+        tagName: tagName.toUpperCase(),
+        textContent: '',
+        setAttribute: (name: string, value: string) => { attributes.set(name, value) },
+        getAttribute: (name: string) => attributes.get(name) ?? null,
+        remove: () => { head.children = head.children.filter((child: unknown) => child !== node) },
+      }
+      return node
+    },
+  }
+}
+
+test('apply installs one tagged stylesheet and dispose removes it', () => {
+  const client = createClient()
+  const document = createDocument()
+  const styles = () => document.head.children.filter((node: any) =>
+    node.tagName === 'STYLE' && node.getAttribute('data-plugin') === PACKAGE.name)
+  ;(globalThis as { document?: unknown }).document = document
+  try {
+    client.apply()
+  } finally {
+    delete (globalThis as { document?: unknown }).document
+  }
+
+  assert.equal(styles().length, 1)
+  assert.match(styles()[0].textContent, /\.cj-/u)
+  client.dispose()
+  assert.equal(styles().length, 0)
 })
 
 test('the card version stays in lockstep with package.json', () => {

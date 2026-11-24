@@ -1,6 +1,6 @@
 {
   "name": "@maci0/dsh-chatjimmy",
-  "version": "0.13.3",
+  "version": "0.13.4",
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
